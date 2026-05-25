@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
 import { CanvasEngine, GameState } from "@/lib/canvas-engine";
-import Canvas from "./components/Canvas";
+import Canvas from "../[week]/[stage]/components/Canvas";
 import dynamic from "next/dynamic";
 
 const BlocklyEditor = dynamic(
-  () => import("./components/BlocklyEditor"),
+  () => import("../[week]/[stage]/components/BlocklyEditor"),
   {
     ssr: false,
     loading: () => (
@@ -19,13 +20,12 @@ const BlocklyEditor = dynamic(
 );
 
 interface PageProps {
-  params: { week: string; stage: string };
+  params: { stageId: string };
 }
 
 export default function StagePage({ params }: PageProps) {
-  const week = parseInt(params.week);
-  const stage = parseInt(params.stage);
-  const stageConfig = getStage(week, stage);
+  const router = useRouter();
+  const stageConfig = getStage(params.stageId);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<CanvasEngine | null>(null);
@@ -39,6 +39,9 @@ export default function StagePage({ params }: PageProps) {
   const [status, setStatus] = useState<"idle" | "running" | "win" | "lose">("idle");
   const [collectedCoins, setCollectedCoins] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
+  
+  // クリア時のモーダル表示用ステート
+  const [isCleared, setIsCleared] = useState(false);
 
   // Canvas初期化
   useEffect(() => {
@@ -64,6 +67,7 @@ export default function StagePage({ params }: PageProps) {
     const engine = new CanvasEngine(canvasRef.current, initialState);
     engineRef.current = engine;
     setTimeLeft(stageConfig.timeLimit);
+    setIsCleared(false); // 初期化時にクリア状態をリセット
 
     engine.loadAllSprites().then(() => {
       engine.draw();
@@ -90,6 +94,7 @@ export default function StagePage({ params }: PageProps) {
     setIsRunning(true);
     setStatus("running");
     setMessage("▶ じっこうちゅう...");
+    setIsCleared(false);
 
     const engine = engineRef.current;
 
@@ -170,6 +175,7 @@ export default function StagePage({ params }: PageProps) {
         engine.draw();
         setStatus("win");
         setMessage("🎉 ぜんぶのコインをとった！クリア！");
+        setIsCleared(true); // クリアモーダルの表示トリガー
       } else {
         setMessage(`コインがまだ ${left} このこっています！`);
       }
@@ -194,22 +200,31 @@ export default function StagePage({ params }: PageProps) {
     setTimeLeft(stageConfig.timeLimit);
     setStatus("idle");
     setMessage("リセットしました。ブロックをくんでじっこうしてね");
+    setIsCleared(false);
     e.draw();
   }, [stageConfig]);
+
+  // 次のステージへ遷移する処理
+  const handleNextStage = () => {
+    if (stageConfig?.nextStageId) {
+      router.push(`/lesson/${stageConfig.nextStageId}`);
+    }
+  };
 
   if (!stageConfig) return (
     <div className="text-white text-center py-20">ステージがみつかりません</div>
   );
 
-  // ステージごとの色テーマ
-  const stageColor = stage === 1 ? "from-blue-600 to-blue-800"
-    : stage === 2 ? "from-green-600 to-green-800"
+  // ステージごとの色テーマとアイコン (stageConfig.stage を使用)
+  const stageNum = stageConfig.stage;
+  const stageColor = stageNum === 1 ? "from-blue-600 to-blue-800"
+    : stageNum === 2 ? "from-green-600 to-green-800"
     : "from-red-600 to-red-800";
 
-  const stageIcon = stage === 1 ? "🪙" : stage === 2 ? "🪙🪙🪙🪙" : "🔥";
+  const stageIcon = stageNum === 1 ? "🪙" : stageNum === 2 ? "🪙🪙🪙🪙" : "🔥";
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }} className="bg-slate-900">
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }} className="bg-slate-900 relative">
 
       {/* ヘッダー */}
       <div className={`bg-gradient-to-r ${stageColor} px-4 py-3 shrink-0`}>
@@ -218,7 +233,7 @@ export default function StagePage({ params }: PageProps) {
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-2xl">{stageIcon}</span>
               <h1 className="text-xl font-bold text-white">
-                Stage {stage}：{stageConfig.title}
+                Stage {stageNum}-{stageConfig.area}：{stageConfig.title}
               </h1>
             </div>
             <p className="text-white text-opacity-90 text-xs">{stageConfig.story}</p>
@@ -252,9 +267,9 @@ export default function StagePage({ params }: PageProps) {
       {/* ヒント（ステージ別） */}
       <div className="bg-slate-700 px-4 py-1.5 border-b border-slate-600 shrink-0">
         <p className="text-yellow-300 text-xs font-medium">
-          {stage === 1 && "💡 ヒント：「Ｘを〇〇 Ｙを〇〇 にうごく」ブロックをつかってコインのざひょうにうごこう！"}
-          {stage === 2 && "💡 ヒント：「まつ」ブロックをつかうとうごきのあいだにじかんをおくことができるよ！いろいろためしてみよう！"}
-          {stage === 3 && `💡 ヒント：「まつ」のデフォルトは${stageConfig.defaultWaitSec}びょう！このままだとじかんぎれになるぞ！へらしてみよう！`}
+          {stageNum === 1 && "💡 ヒント：「Ｘを〇〇 Ｙを〇〇 にうごく」ブロックをつかってコインのざひょうにうごこう！"}
+          {stageNum === 2 && "💡 ヒント：「まつ」ブロックをつかうとうごきのあいだにじかんをおくことができるよ！いろいろためしてみよう！"}
+          {stageNum === 3 && `💡 ヒント：「まつ」のデフォルトは${stageConfig.defaultWaitSec}びょう！このままだとじかんぎれになるぞ！へらしてみよう！`}
         </p>
       </div>
 
@@ -262,7 +277,7 @@ export default function StagePage({ params }: PageProps) {
       <div className="bg-slate-700 px-4 py-2 flex items-center gap-3 border-b border-slate-600 shrink-0">
         <button
           onClick={handleRun}
-          disabled={isRunning || !code.trim()}
+          disabled={isRunning || !code.trim() || isCleared}
           className="bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-bold py-2 px-6 rounded-lg text-sm transition"
         >
           {isRunning ? "⏳ じっこうちゅう..." : "▶ じっこう"}
@@ -303,7 +318,7 @@ export default function StagePage({ params }: PageProps) {
         </div>
 
         {/* Canvas */}
-        <div className="bg-slate-800 rounded-lg p-3 flex flex-col flex-1">
+        <div className="bg-slate-800 rounded-lg p-3 flex flex-col flex-1 relative">
           <h2 className="text-sm font-bold text-white mb-2">
             🎮 シミュレーター
             {stageConfig.showCoordLabels
@@ -312,12 +327,39 @@ export default function StagePage({ params }: PageProps) {
             }
           </h2>
           <Canvas width={800} height={500} ref={canvasRef} />
+
+          {/* クリア時のモーダルオーバーレイ */}
+          {isCleared && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg z-50 backdrop-blur-sm">
+              <div className="bg-slate-800 p-8 rounded-xl text-center shadow-2xl border-4 border-yellow-400 max-w-md w-full">
+                <div className="text-5xl mb-4">🎉</div>
+                <h2 className="text-3xl font-bold text-yellow-400 mb-2">クリア！</h2>
+                <p className="text-white mb-8">すばらしい！よくできました！</p>
+                <div className="flex flex-col gap-3">
+                  {stageConfig.nextStageId && (
+                    <button 
+                      onClick={handleNextStage}
+                      className="w-full py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-bold text-lg shadow-lg transition-transform active:scale-95"
+                    >
+                      つぎのステージへ ▶
+                    </button>
+                  )}
+                  <button 
+                    onClick={handleReset}
+                    className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-bold shadow-lg transition-transform active:scale-95"
+                  >
+                    もういちどプレイする 🔄
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 生成コード */}
       {code.trim() && (
-        <div className="mx-3 mb-2 bg-slate-800 p-2 rounded text-xs shrink-0">
+        <div className="mx-3 mb-2 bg-slate-800 p-2 rounded text-xs shrink-0 z-10">
           <span className="text-slate-400">📄 コード：</span>
           <pre className="text-green-300 font-mono overflow-auto max-h-14 mt-1">{code}</pre>
         </div>
