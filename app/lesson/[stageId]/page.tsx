@@ -4,11 +4,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
 import { CanvasEngine, GameState } from "@/lib/canvas-engine";
-import Canvas from "../[week]/[stage]/components/Canvas";
+import Canvas from "./components/Canvas";
 import dynamic from "next/dynamic";
 
 const BlocklyEditor = dynamic(
-  () => import("../[week]/[stage]/components/BlocklyEditor"),
+  () => import("./components/BlocklyEditor"),
   {
     ssr: false,
     loading: () => (
@@ -40,23 +40,25 @@ export default function StagePage({ params }: PageProps) {
   const [collectedCoins, setCollectedCoins] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   
-  // クリア時のモーダル表示用ステート
   const [isCleared, setIsCleared] = useState(false);
 
-  // Canvas初期化
   useEffect(() => {
     if (!stageConfig || !canvasRef.current) return;
     if (animRafRef.current) { cancelAnimationFrame(animRafRef.current); }
     if (timerRef.current) { clearInterval(timerRef.current); }
 
-    const coins = stageConfig.coins.map(c => ({ ...c, collected: false }));
+    const coins = stageConfig.coins.map(c => ({ ...c, collected: false, hidden: c.hidden ?? false }));
     const attackPoints = stageConfig.attackPoints.map(a => ({ ...a, hit: false }));
+    const traps = stageConfig.traps ? JSON.parse(JSON.stringify(stageConfig.traps)) : [];
 
     const initialState: GameState = {
       playerX: -150, playerY: -150,
-      enemyX: -9999, enemyY: -9999,
-      enemyHP: 0, enemyMaxHP: 0,
-      coins, attackPoints,
+      enemyX: stageConfig.enemyX, 
+      enemyY: stageConfig.enemyY,
+      enemyHP: stageConfig.enemyHP, 
+      enemyMaxHP: stageConfig.enemyHP,
+      enemyType: stageConfig.enemyType,
+      coins, attackPoints, traps,
       gameOver: false, gameWon: false,
       damageEffects: [],
       explosionFrame: 0, explosionX: 0, explosionY: 0, showExplosion: false,
@@ -67,15 +69,14 @@ export default function StagePage({ params }: PageProps) {
     const engine = new CanvasEngine(canvasRef.current, initialState);
     engineRef.current = engine;
     setTimeLeft(stageConfig.timeLimit);
-    setIsCleared(false); // 初期化時にクリア状態をリセット
+    setIsCleared(false);
 
     engine.loadAllSprites().then(() => {
       engine.draw();
       const loop = () => {
-        if (!isRunningRef.current) {
-          engine.tickDamageEffects();
-          engine.draw();
-        }
+        // ★ 実行中でなくても、描画とトラップの点滅は進み続ける
+        engine.tickDamageEffects();
+        engine.draw();
         animRafRef.current = requestAnimationFrame(loop);
       };
       animRafRef.current = requestAnimationFrame(loop);
@@ -98,19 +99,24 @@ export default function StagePage({ params }: PageProps) {
 
     const engine = engineRef.current;
 
-    // リセット
+    // ★ 実行開始時にタイマーや当たり判定の基準時間をリセットする
+    engine.startTime = Date.now();
     engine.state.playerX = -150;
     engine.state.playerY = -150;
+    engine.state.enemyHP = stageConfig.enemyHP;
     engine.state.gameOver = false;
     engine.state.gameWon = false;
-    engine.state.coins.forEach(c => c.collected = false);
+    engine.state.coins.forEach((c, i) => {
+      c.collected = false;
+      c.hidden = stageConfig.coins[i]?.hidden ?? false;
+    });
+    engine.state.attackPoints.forEach(a => a.hit = false);
     engine.state.timeLeft = stageConfig.timeLimit;
     engine.state.damageEffects = [];
     setCollectedCoins(0);
     setTimeLeft(stageConfig.timeLimit);
     engine.draw();
 
-    // タイマー（timeLimit > 0 のみ）
     let timedOut = false;
     let remaining = stageConfig.timeLimit;
 
@@ -126,12 +132,47 @@ export default function StagePage({ params }: PageProps) {
       }, 100);
     }
 
-    // movePlayer：毎回タイムアウトチェック
     const movePlayer = async (x: number, y: number) => {
-      if (timedOut) return;
-      x = Math.max(-200, Math.min(200, Number(x)));
-      y = Math.max(-200, Math.min(200, Number(y)));
-      await engine.movePlayer(x, y);
+      if (timedOut || engine.state.gameOver) return;
+      const targetX = Math.max(-200, Math.min(200, Number(x)));
+      const targetY = Math.max(-200, Math.min(200, Number(y)));
+
+      const startX = engine.state.playerX;
+      const startY = engine.state.playerY;
+      const duration = 500;
+
+      await new Promise<void>((resolve, reject) => {
+        const startTime = performance.now();
+        const animate = (time: number) => {
+          if (timedOut) {
+            resolve();
+            return;
+          }
+          // ★ 移動アニメーション中も常にトラップ監視！
+          if (engine.checkTraps()) {
+            engine.state.gameOver = true;
+            reject(new Error("TRAP_HIT"));
+            return;
+          }
+
+          const elapsed = performance.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          engine.state.playerX = startX + (targetX - startX) * progress;
+          engine.state.playerY = startY + (targetY - startY) * progress;
+          
+          engine.draw();
+          
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          } else {
+            resolve();
+          }
+        };
+        requestAnimationFrame(animate);
+      });
+
+      await engine.movePlayer(targetX, targetY);
 
       const got = engine.checkCoinCollection();
       if (got > 0) {
@@ -141,7 +182,6 @@ export default function StagePage({ params }: PageProps) {
       }
     };
 
-    // wait：allowWait=trueのみ実際に待つ
     const wait = (ms: number) =>
       stageConfig.allowWait ? engine.wait(Number(ms)) : Promise.resolve();
 
@@ -155,27 +195,33 @@ export default function StagePage({ params }: PageProps) {
       );
       await fn(movePlayer, wait);
     } catch (e: any) {
-      setMessage("❌ エラー: " + e.message);
+      // ★ カミナリに当たった時の専用エラーキャッチ
+      if (e.message === "TRAP_HIT") {
+        engine.state.gameOver = true;
+        engine.draw();
+        setStatus("lose");
+        setMessage("⚡ カミナリにうたれた！タイミングをはかろう！");
+      } else {
+        setMessage("❌ エラー: " + e.message);
+      }
     }
 
-    // タイマー停止
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-    // タイムアウト判定
-    if (timedOut && !engine.state.gameWon) {
+    // トラップでのゲームオーバーじゃなく、単純な時間切れの場合
+    if (timedOut && !engine.state.gameWon && !engine.state.gameOver) {
       engine.state.gameOver = true;
       engine.draw();
       setStatus("lose");
       setMessage("⏰ じかんぎれ！「まつ」のじかんをへらしてみよう！");
-    } else if (!engine.state.gameWon) {
-      // クリア判定
+    } else if (!engine.state.gameWon && !engine.state.gameOver) {
       const left = engine.state.coins.filter(c => !c.collected).length;
       if (left === 0) {
         engine.state.gameWon = true;
         engine.draw();
         setStatus("win");
         setMessage("🎉 ぜんぶのコインをとった！クリア！");
-        setIsCleared(true); // クリアモーダルの表示トリガー
+        setIsCleared(true);
       } else {
         setMessage(`コインがまだ ${left} このこっています！`);
       }
@@ -191,9 +237,17 @@ export default function StagePage({ params }: PageProps) {
     if (!engineRef.current || !stageConfig || isRunningRef.current) return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const e = engineRef.current;
+    
+    // ★ リセット時にも基準時間を直す
+    e.startTime = Date.now();
     e.state.playerX = -150; e.state.playerY = -150;
+    e.state.enemyHP = stageConfig.enemyHP;
     e.state.gameOver = false; e.state.gameWon = false;
-    e.state.coins.forEach(c => c.collected = false);
+    e.state.coins.forEach((c, i) => {
+      c.collected = false;
+      c.hidden = stageConfig.coins[i]?.hidden ?? false;
+    });
+    e.state.attackPoints.forEach(a => a.hit = false);
     e.state.timeLeft = 0;
     e.state.damageEffects = [];
     setCollectedCoins(0);
@@ -204,7 +258,6 @@ export default function StagePage({ params }: PageProps) {
     e.draw();
   }, [stageConfig]);
 
-  // 次のステージへ遷移する処理
   const handleNextStage = () => {
     if (stageConfig?.nextStageId) {
       router.push(`/lesson/${stageConfig.nextStageId}`);
@@ -215,7 +268,6 @@ export default function StagePage({ params }: PageProps) {
     <div className="text-white text-center py-20">ステージがみつかりません</div>
   );
 
-  // ステージごとの色テーマとアイコン (stageConfig.stage を使用)
   const stageNum = stageConfig.stage;
   const stageColor = stageNum === 1 ? "from-blue-600 to-blue-800"
     : stageNum === 2 ? "from-green-600 to-green-800"
@@ -239,7 +291,6 @@ export default function StagePage({ params }: PageProps) {
             <p className="text-white text-opacity-90 text-xs">{stageConfig.story}</p>
           </div>
           <div className="flex gap-2 items-center shrink-0 ml-4">
-            {/* タイマー */}
             {stageConfig.timeLimit > 0 && (
               <div className={`px-3 py-1 rounded text-sm font-bold transition-colors ${
                 timeLeft <= 2 ? "bg-red-500 animate-pulse" :
@@ -248,11 +299,9 @@ export default function StagePage({ params }: PageProps) {
                 ⏰ {timeLeft.toFixed(1)}びょう
               </div>
             )}
-            {/* コイン数 */}
             <div className="bg-black bg-opacity-30 text-white px-3 py-1 rounded text-sm font-bold">
               🪙 {collectedCoins}/{stageConfig.coins.length}
             </div>
-            {/* 座標ラベルの有無を表示 */}
             <div className={`px-2 py-1 rounded text-xs font-bold ${
               stageConfig.showCoordLabels
                 ? "bg-blue-500 text-white"
@@ -264,7 +313,7 @@ export default function StagePage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* ヒント（ステージ別） */}
+      {/* ヒント */}
       <div className="bg-slate-700 px-4 py-1.5 border-b border-slate-600 shrink-0">
         <p className="text-yellow-300 text-xs font-medium">
           {stageNum === 1 && "💡 ヒント：「Ｘを〇〇 Ｙを〇〇 にうごく」ブロックをつかってコインのざひょうにうごこう！"}
@@ -328,7 +377,7 @@ export default function StagePage({ params }: PageProps) {
           </h2>
           <Canvas width={800} height={500} ref={canvasRef} />
 
-          {/* クリア時のモーダルオーバーレイ */}
+          {/* クリアモーダル */}
           {isCleared && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-lg z-50 backdrop-blur-sm">
               <div className="bg-slate-800 p-8 rounded-xl text-center shadow-2xl border-4 border-yellow-400 max-w-md w-full">
@@ -357,7 +406,7 @@ export default function StagePage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* 生成コード */}
+      {/* 生成コード（確認用） */}
       {code.trim() && (
         <div className="mx-3 mb-2 bg-slate-800 p-2 rounded text-xs shrink-0 z-10">
           <span className="text-slate-400">📄 コード：</span>

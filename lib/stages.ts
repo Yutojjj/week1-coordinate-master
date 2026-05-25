@@ -5,24 +5,38 @@ export interface AttackPoint {
   radius: number;
 }
 
+export interface Trap {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  type: "lightning" | "fire"; // ★ トラップの種類
+  activePhase: number;        // ★ 何秒間 危険（落ちる）か
+  inactivePhase: number;      // ★ 何秒間 安全（休む）か
+  offset: number;             // ★ タイマーのズレ（交互にするため）
+}
+
 export interface StageConfig {
   week: number;
   stage: number;
-  area: number;           // エリア番号を追加
+  area: number;
   title: string;
   story: string;
-  goal: string;           // 学習目的（先生・保護者向け）
-  timeLimit: number;      // 秒 (0=なし)
-  enemyType: "none" | "slime" | "orc";
+  goal: string;
+  timeLimit: number;
+  enemyType: "none" | "slime" | "orc" | "bat";
   enemyHP: number;
+  enemyX: number;
+  enemyY: number;
   attackPoints: AttackPoint[];
-  coins: Array<{ x: number; y: number }>;
+  coins: Array<{ x: number; y: number; hidden?: boolean }>;
   enemySpeed: number;
   blocklyBlocks: string[];
   allowWait: boolean;
   showCoordLabels: boolean;
-  defaultWaitSec: number; // waitブロックのデフォルト値（秒）
-  nextStageId: string | null; // ★ 次のステージへ遷移するためのIDを追加
+  defaultWaitSec: number;
+  nextStageId: string | null;
+  traps: Trap[];
 }
 
 export const STAGES: Record<string, StageConfig> = {
@@ -36,7 +50,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "ゆうしゃよ！まほうのコインがあるぞ！ざひょうをみてとりにいこう！",
     goal: "X・Y座標を指定してキャラを動かす基本操作を習得する",
     timeLimit: 0,
-    enemyType: "none", enemyHP: 0,
+    enemyType: "none", enemyHP: 0, enemyX: 0, enemyY: 0,
     attackPoints: [],
     coins: [
       { x: 100, y: 80 } 
@@ -46,7 +60,8 @@ export const STAGES: Record<string, StageConfig> = {
     allowWait: false,
     showCoordLabels: true,
     defaultWaitSec: 1,
-    nextStageId: "1-1-2", // 次のエリアへ
+    nextStageId: "1-1-2",
+    traps: [],
   },
   "1-1-2": {
     week: 1, stage: 1, area: 2,
@@ -54,7 +69,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "コインがふえたぞ！じゅんばんにうごいてとりにいこう！",
     goal: "複数の移動ブロックをつなげる（順次処理）",
     timeLimit: 0,
-    enemyType: "none", enemyHP: 0,
+    enemyType: "none", enemyHP: 0, enemyX: 0, enemyY: 0,
     attackPoints: [],
     coins: [
       { x: -100, y: 100 },
@@ -65,28 +80,30 @@ export const STAGES: Record<string, StageConfig> = {
     allowWait: false,
     showCoordLabels: true,
     defaultWaitSec: 1,
-    nextStageId: "1-1-3", // 次のエリアへ
+    nextStageId: "1-1-3",
+    traps: [],
   },
   "1-1-3": {
     week: 1, stage: 1, area: 3,
     title: "たくさんあつめろ！(エリア3)",
-    story: "コインがたくさんあるぞ！さいごのしれんだ！",
-    goal: "少し複雑な配置での順次処理マスター",
+    story: "ざひょうがみえないぞ！グリッドをよくみて、ばらばらのコインをぜんぶあつめよう！",
+    goal: "少し複雑な配置での順次処理マスター・座標の自己推測",
     timeLimit: 0,
-    enemyType: "none", enemyHP: 0,
+    enemyType: "none", enemyHP: 0, enemyX: 0, enemyY: 0,
     attackPoints: [],
     coins: [
-      { x: -100, y: 100 },
-      { x: 100, y: 100 },
-      { x: -100, y: -100 },
-      { x: 100, y: -100 }
+      { x: -120, y: 80 },
+      { x: 140, y: 110 },
+      { x: -60, y: -150 },
+      { x: 80, y: -40 }
     ],
     enemySpeed: 0,
     blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy"],
     allowWait: false,
-    showCoordLabels: true,
+    showCoordLabels: false,
     defaultWaitSec: 1,
-    nextStageId: "1-2-1", // 次のステージ（Stage 2）へ
+    nextStageId: "1-2-1",
+    traps: [],
   },
 
   // ─────────────────────────────────────────────────────────
@@ -94,35 +111,37 @@ export const STAGES: Record<string, StageConfig> = {
   // ─────────────────────────────────────────────────────────
   "1-2-1": {
     week: 1, stage: 2, area: 1,
-    title: "まつブロックをつかおう！(エリア1)",
-    story: "コインをとるあいだに「まつ」ブロックをつかってみよう！",
-    goal: "待つブロックの使い方を習得する",
+    title: "まほうじんでチャージ！(エリア1)",
+    story: "コインのまえにコウモリがいるぞ！赤丸（まほうじん）のうえで「まつ」ブロックをつかって3びょうかんエネルギーをチャージし、コウモリをたおそう！",
+    goal: "特定の場所に移動し、指定時間待機（wait）することでギミックを作動させる",
     timeLimit: 0,
-    enemyType: "none", enemyHP: 0,
-    attackPoints: [],
+    enemyType: "bat", enemyHP: 3, 
+    enemyX: 100, enemyY: -100, 
+    attackPoints: [
+      { id: 1, x: 0, y: -100, radius: 20 }
+    ],
     coins: [
-      { x: -150, y: 120 },
-      { x: 150, y: 120 }
+      { x: 160, y: -100, hidden: true }
     ],
     enemySpeed: 0,
     blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy", "wait"],
     allowWait: true,
     showCoordLabels: true,
-    defaultWaitSec: 1,
+    defaultWaitSec: 3,
     nextStageId: "1-2-2",
+    traps: [],
   },
   "1-2-2": {
     week: 1, stage: 2, area: 2,
-    title: "じかんぎれにちゅうい！(エリア2)",
-    story: "「まつ」じかんをへらさないと、じかんぎれになるぞ！",
-    goal: "待つ時間を調整して制限時間内にクリアする",
-    timeLimit: 6,
-    enemyType: "none", enemyHP: 0,
+    // ★ タイトル・ストーリー・ギミックを「交互落雷」に更新！
+    title: "カミナリをよけろ！(エリア2)",
+    story: "オークがカミナリのまほうをうってくるぞ！「まつ」をつかって、カミナリがおちるのをやりすごそう！",
+    goal: "待つ時間を調整して制限時間内にトラップを回避しクリアする",
+    timeLimit: 12, // 待ち時間が必要なため制限時間を少し増やしました
+    enemyType: "orc", enemyHP: 99, enemyX: 0, enemyY: 150, // 奥から攻撃してくる演出（HP99で倒せない）
     attackPoints: [],
     coins: [
-      { x: -100, y: 0 },
-      { x: 100, y: 0 },
-      { x: 0, y: 100 }
+      { x: 150, y: 0 } // ゴールのコイン
     ],
     enemySpeed: 0,
     blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy", "wait"],
@@ -130,6 +149,11 @@ export const STAGES: Record<string, StageConfig> = {
     showCoordLabels: true,
     defaultWaitSec: 1,
     nextStageId: "1-2-3",
+    traps: [
+      // ★ 1秒雷、1秒休みの交互トラップ
+      { id: 1, x: -50, y: 0, radius: 45, type: "lightning", activePhase: 1, inactivePhase: 1, offset: 0 },
+      { id: 2, x: 50, y: 0, radius: 45, type: "lightning", activePhase: 1, inactivePhase: 1, offset: 1 }
+    ],
   },
   "1-2-3": {
     week: 1, stage: 2, area: 3,
@@ -137,21 +161,22 @@ export const STAGES: Record<string, StageConfig> = {
     story: "こんどはざひょうがみえないぞ！じぶんでかんがえてみよう！",
     goal: "座標を自分で考える・時間調整の総仕上げ",
     timeLimit: 8,
-    enemyType: "none", enemyHP: 0,
+    enemyType: "none", enemyHP: 0, enemyX: 0, enemyY: 0,
     attackPoints: [],
     coins: [
-      { x: -150, y: 100 },
-      { x: 150, y: 100 },
-      { x: 0, y: 0 },
-      { x: -100, y: -130 },
-      { x: 100, y: -130 }
+      { x: -130, y: 90 },
+      { x: 160, y: 40 },
+      { x: -30, y: -10 },
+      { x: -110, y: -140 },
+      { x: 120, y: -100 }
     ],
     enemySpeed: 0,
     blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy", "wait"],
     allowWait: true,
     showCoordLabels: false,
     defaultWaitSec: 1,
-    nextStageId: "2-1-1", // Week 2へ
+    nextStageId: "2-1-1",
+    traps: [],
   },
 
   // ─────────────────────────────────────────────────────────
@@ -163,7 +188,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "スライムがあらわれた！ほうげきばしょ（赤丸）までいどうして、スライムのほうをむこう！",
     goal: "ターゲットに向けて角度（向き）を変える操作を習得する",
     timeLimit: 0,
-    enemyType: "slime", enemyHP: 1,
+    enemyType: "slime", enemyHP: 1, enemyX: 0, enemyY: 0,
     attackPoints: [
       { id: 1, x: 0, y: -100, radius: 20 }
     ],
@@ -174,6 +199,7 @@ export const STAGES: Record<string, StageConfig> = {
     showCoordLabels: true,
     defaultWaitSec: 1,
     nextStageId: "2-1-2",
+    traps: [],
   },
   "2-1-2": {
     week: 2, stage: 1, area: 2,
@@ -181,7 +207,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "スライムのほうをむいてから、まっすぐすすんでこうげきだ！",
     goal: "向いている方向を基準にした相対的な移動（前進）を習得する",
     timeLimit: 0,
-    enemyType: "slime", enemyHP: 1,
+    enemyType: "slime", enemyHP: 1, enemyX: 100, enemyY: 150,
     attackPoints: [
       { id: 1, x: 100, y: 100, radius: 20 }
     ],
@@ -192,6 +218,7 @@ export const STAGES: Record<string, StageConfig> = {
     showCoordLabels: true,
     defaultWaitSec: 1,
     nextStageId: "2-1-3",
+    traps: [],
   },
   "2-1-3": {
     week: 2, stage: 1, area: 3,
@@ -199,7 +226,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "むきをかえてすすむ、をくりかえして2ひきたおそう！",
     goal: "向き変更と相対移動の連続処理を習得する",
     timeLimit: 0,
-    enemyType: "slime", enemyHP: 2,
+    enemyType: "slime", enemyHP: 2, enemyX: 0, enemyY: 0,
     attackPoints: [
       { id: 1, x: -100, y: 100, radius: 20 },
       { id: 2, x: 100, y: -100, radius: 20 }
@@ -211,6 +238,7 @@ export const STAGES: Record<string, StageConfig> = {
     showCoordLabels: true,
     defaultWaitSec: 1,
     nextStageId: "2-2-1",
+    traps: [],
   },
 
   // ─────────────────────────────────────────────────────────
@@ -222,7 +250,7 @@ export const STAGES: Record<string, StageConfig> = {
     story: "オークがならんでいるぞ。「くりかえす」ブロックをつかおう！",
     goal: "ループ処理（反復）を利用してコードを短くする",
     timeLimit: 0,
-    enemyType: "orc", enemyHP: 3,
+    enemyType: "orc", enemyHP: 3, enemyX: 0, enemyY: 0,
     attackPoints: [
       { id: 1, x: -100, y: -50, radius: 20 },
       { id: 2, x: 0, y: -50, radius: 20 },
@@ -234,11 +262,11 @@ export const STAGES: Record<string, StageConfig> = {
     allowWait: true,
     showCoordLabels: true,
     defaultWaitSec: 0.5,
-    nextStageId: null, // 次のステージがない場合はnull
+    nextStageId: null,
+    traps: [],
   },
 };
 
-// 呼び出し関数もID指定に変更しています
 export function getStage(id: string): StageConfig | null {
   return STAGES[id] || null;
 }

@@ -25,13 +25,15 @@ export default function Home() {
       {/* ステージ選択 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 max-w-4xl w-full">
         {[
-          { week: 1, stage: 1, title: "コインを集めろ！", emoji: "🪙", color: "from-blue-500 to-blue-600" },
-          { week: 1, stage: 2, title: "スライムを倒せ！", emoji: "💧", color: "from-purple-500 to-purple-600" },
-          { week: 1, stage: 3, title: "オークボスを倒せ！", emoji: "🗡️", color: "from-red-500 to-red-600" },
+          // ★ 新しいステージ構成に合わせて、初期エリアのIDを指定できるように変更しました
+          { week: 1, stage: 1, area: 1, title: "コインをとろう！", emoji: "🪙", color: "from-blue-500 to-blue-600" },
+          { week: 1, stage: 2, area: 1, title: "時間をあやつれ！", emoji: "⏱️", color: "from-purple-500 to-purple-600" },
+          { week: 2, stage: 1, area: 1, title: "スライムをたおせ！", emoji: "💧", color: "from-red-500 to-red-600" },
         ].map((item) => (
           <Link
-            key={`${item.week}-${item.stage}`}
-            href={`/lesson/${item.week}/${item.stage}`}
+            key={`${item.week}-${item.stage}-${item.area}`}
+            // ★ ここを /lesson/1-1-1 のような形式に変更しました
+            href={`/lesson/${item.week}-${item.stage}-${item.area}`}
           >
             <div
               className={`bg-gradient-to-br ${item.color} rounded-lg p-6 cursor-pointer transform hover:scale-105 transition duration-300 shadow-lg`}

@@ -28,6 +28,18 @@ export default function BlocklyEditor({
 
       // ── ブロック定義 ──────────────────────────
 
+      // ★ 新規追加：「じっこうがおされたとき」のイベントブロック（ハットブロック）
+      Blockly.Blocks["event_start"] = {
+        init: function () {
+          this.appendDummyInput()
+            .appendField("🚩 じっこうが おされたとき");
+          this.setNextStatement(true, null);
+          this.setColour(65);
+          this.setDeletable(false); // ★ ゴミ箱に捨てられないようにする
+          this.setTooltip("ここからプログラムがはじまります。このブロックの下につなげてください。");
+        },
+      };
+
       Blockly.Blocks["move_xy"] = {
         init: function () {
           this.appendDummyInput()
@@ -111,7 +123,31 @@ export default function BlocklyEditor({
         },
       };
 
-      Blockly.Blocks["repeat_n"] = {
+      Blockly.Blocks["point_in_direction"] = {
+        init: function () {
+          this.appendDummyInput()
+            .appendField(new Blockly.FieldAngle(90), "ANGLE")
+            .appendField("どにむける");
+          this.setPreviousStatement(true, null);
+          this.setNextStatement(true, null);
+          this.setColour(160);
+          this.setTooltip("キャラクターのむきをかえます");
+        },
+      };
+
+      Blockly.Blocks["move_steps"] = {
+        init: function () {
+          this.appendDummyInput()
+            .appendField(new Blockly.FieldNumber(50, -200, 200), "STEPS")
+            .appendField("ほ うごかす");
+          this.setPreviousStatement(true, null);
+          this.setNextStatement(true, null);
+          this.setColour(160);
+          this.setTooltip("むいているほうこうに うごきます");
+        },
+      };
+
+      Blockly.Blocks["repeat_times"] = {
         init: function () {
           this.appendDummyInput()
             .appendField(new Blockly.FieldNumber(3, 1, 100), "TIMES")
@@ -125,6 +161,11 @@ export default function BlocklyEditor({
       };
 
       // ── コード生成 ──────────────────────────
+
+      // ★ event_start 自体はコードを出さず、続くブロックを評価する
+      javascriptGenerator.forBlock["event_start"] = (block: any) => {
+        return ""; 
+      };
 
       javascriptGenerator.forBlock["move_xy"] = (block: any) => {
         const vx = block.getFieldValue("VX") ?? "0";
@@ -149,12 +190,19 @@ export default function BlocklyEditor({
       };
       javascriptGenerator.forBlock["wait_sec"] = (block: any) => {
         const t = block.getFieldValue("TIME") ?? defaultWaitSec;
-        // allowWait=falseの場合は待たない（0ms）
         return allowWait
           ? `await wait(${t} * 1000);\n`
           : `/* まつは このステージではつかえません */\n`;
       };
-      javascriptGenerator.forBlock["repeat_n"] = (block: any) => {
+      javascriptGenerator.forBlock["point_in_direction"] = (block: any) => {
+        const angle = block.getFieldValue("ANGLE") ?? "90";
+        return `await pointInDirection(${angle});\n`;
+      };
+      javascriptGenerator.forBlock["move_steps"] = (block: any) => {
+        const steps = block.getFieldValue("STEPS") ?? "50";
+        return `await moveSteps(${steps});\n`;
+      };
+      javascriptGenerator.forBlock["repeat_times"] = (block: any) => {
         const n = block.getFieldValue("TIMES") ?? "1";
         const body = javascriptGenerator.statementToCode(block, "DO");
         return `for(let _i=0;_i<(${n});_i++){\n${body}}\n`;
@@ -172,7 +220,18 @@ export default function BlocklyEditor({
         { kind: "block", type: "move_dy" },
       ];
 
-      // 待つ（allowWaitに関わらず表示するがコードは変わる）
+      if (stageBlocks.includes("point_in_direction")) {
+        contents.push(
+          { kind: "label", text: "🔄 むきをかえる" },
+          { kind: "block", type: "point_in_direction" }
+        );
+      }
+      if (stageBlocks.includes("move_steps")) {
+        contents.push(
+          { kind: "label", text: "👣 まっすぐすすむ" },
+          { kind: "block", type: "move_steps" }
+        );
+      }
       if (stageBlocks.includes("wait")) {
         contents.push(
           {
@@ -182,11 +241,10 @@ export default function BlocklyEditor({
           { kind: "block", type: "wait_sec" }
         );
       }
-
-      if (stageBlocks.includes("repeat")) {
+      if (stageBlocks.includes("repeat_times")) {
         contents.push(
           { kind: "label", text: "🔁 くりかえす" },
-          { kind: "block", type: "repeat_n" }
+          { kind: "block", type: "repeat_times" }
         );
       }
 
@@ -208,11 +266,30 @@ export default function BlocklyEditor({
         renderer: "zelos",
       });
 
+      // ★ 初期配置：「じっこうが おされたとき」を置く
+      if (ws.getBlocksByType("event_start", false).length === 0) {
+        const startBlock = ws.newBlock("event_start");
+        startBlock.initSvg();
+        startBlock.render();
+        startBlock.moveBy(20, 20);
+      }
+
       workspaceRef.current = ws;
 
+      // ★ コード生成ルールの変更：繋がっているものだけを生成
       ws.addChangeListener(() => {
-        const code = javascriptGenerator.workspaceToCode(ws);
-        onCodeChange?.(code);
+        const startBlocks = ws.getBlocksByType("event_start", false);
+        if (startBlocks.length > 0) {
+          const nextBlock = startBlocks[0].getNextBlock();
+          if (nextBlock) {
+            const code = javascriptGenerator.blockToCode(nextBlock) as string;
+            onCodeChange?.(code);
+          } else {
+            onCodeChange?.("");
+          }
+        } else {
+          onCodeChange?.("");
+        }
       });
     };
 
@@ -226,6 +303,19 @@ export default function BlocklyEditor({
     };
   }, [stageBlocks, allowWait, defaultWaitSec]);
 
+  // ★ クリアボタンの挙動を変更（event_start だけは残す）
+  const handleClearBlocks = () => {
+    if (workspaceRef.current) {
+      const ws = workspaceRef.current;
+      const blocks = ws.getAllBlocks();
+      blocks.forEach((b: any) => {
+        if (b.type !== "event_start") {
+          b.dispose(false);
+        }
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2 h-full">
       <div
@@ -233,8 +323,8 @@ export default function BlocklyEditor({
         style={{ width: "100%", height: "460px", borderRadius: "6px", border: "2px solid #374151" }}
       />
       <button
-        onClick={() => workspaceRef.current?.clear()}
-        className="bg-slate-600 hover:bg-slate-500 text-white text-sm font-bold py-1 px-4 rounded self-end"
+        onClick={handleClearBlocks}
+        className="bg-slate-600 hover:bg-slate-500 text-white text-sm font-bold py-1 px-4 rounded self-end transition-colors"
       >
         🗑️ クリア
       </button>
