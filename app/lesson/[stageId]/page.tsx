@@ -216,14 +216,17 @@ export default function StagePage({ params }: PageProps) {
       setMessage("⏰ じかんぎれ！「まつ」のじかんをへらしてみよう！");
     } else if (!engine.state.gameWon && !engine.state.gameOver) {
       const left = engine.state.coins.filter(c => !c.collected).length;
-      if (left === 0) {
+      const enemyDefeated = engine.state.enemyType !== "none" && engine.state.enemyHP === 0;
+      if (enemyDefeated || (engine.state.enemyType === "none" && left === 0)) {
         engine.state.gameWon = true;
         engine.draw();
         setStatus("win");
-        setMessage("🎉 ぜんぶのコインをとった！クリア！");
+        setMessage(enemyDefeated ? "🎉 オークをたおした！クリア！" : "🎉 ぜんぶのコインをとった！クリア！");
         setIsCleared(true);
-      } else {
+      } else if (left > 0 && engine.state.enemyType === "none") {
         setMessage(`コインがまだ ${left} このこっています！`);
+      } else {
+        setMessage("オークをたおせなかった！もっとちかくにいよう！");
       }
     }
 

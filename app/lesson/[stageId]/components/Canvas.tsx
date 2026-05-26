@@ -14,8 +14,8 @@ const Canvas = forwardRef<HTMLCanvasElement, CanvasProps>(
         ref={ref}
         width={width}
         height={height}
-        className="border-2 border-slate-600 rounded bg-slate-900 w-full"
-        style={{ maxWidth: "100%" }}
+        className="border-2 border-slate-600 rounded w-full"
+        style={{ maxWidth: "100%", imageRendering: "pixelated" }}
       />
     );
   }

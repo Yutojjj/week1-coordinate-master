@@ -137,22 +137,22 @@ export const STAGES: Record<string, StageConfig> = {
     title: "カミナリをよけろ！(エリア2)",
     story: "オークがカミナリのまほうをうってくるぞ！「まつ」をつかって、カミナリがおちるのをやりすごそう！",
     goal: "待つ時間を調整して制限時間内にトラップを回避しクリアする",
-    timeLimit: 12, // 待ち時間が必要なため制限時間を少し増やしました
-    enemyType: "orc", enemyHP: 99, enemyX: 0, enemyY: 150, // 奥から攻撃してくる演出（HP99で倒せない）
+    timeLimit: 0, // 制限時間なし
+    enemyType: "orc", enemyHP: 9, enemyX: 0, enemyY: 150, // X軸100以内にいる間ダメージを与えて倒す
     attackPoints: [],
-    coins: [
-      { x: 150, y: 0 } // ゴールのコイン
-    ],
+    coins: [],
     enemySpeed: 0,
     blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy", "wait"],
     allowWait: true,
     showCoordLabels: true,
-    defaultWaitSec: 1,
+    defaultWaitSec: 3,
     nextStageId: "1-2-3",
     traps: [
-      // ★ 1秒雷、1秒休みの交互トラップ
-      { id: 1, x: -50, y: 0, radius: 45, type: "lightning", activePhase: 1, inactivePhase: 1, offset: 0 },
-      { id: 2, x: 50, y: 0, radius: 45, type: "lightning", activePhase: 1, inactivePhase: 1, offset: 1 }
+      // タイムライン: t=0〜3待つ(安全) → t=3.5〜6.5 X=-50で待つ(左休み) → t=7〜10 X=50で待つ(右休み)
+      // 左雷(X=-50): t=0〜3アクティブ、t=3〜9休み、t=9〜アクティブ
+      { id: 1, x: -50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 6, offset: 0 },
+      // 右雷(X=50): t=0〜7休み、t=7〜10アクティブ... ではなく t=7〜10休みにするためoffset=5
+      { id: 2, x: 50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 6, offset: 5 }
     ],
   },
   "1-2-3": {

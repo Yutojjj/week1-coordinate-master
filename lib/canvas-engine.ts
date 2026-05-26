@@ -261,12 +261,49 @@ export class CanvasEngine {
       const ex = this.toCanvasX(state.enemyX), ey = this.toCanvasY(state.enemyY);
       const eSize = Math.round(W * 0.12);
       const img = this.sprites.get(state.enemyType);
-      
-      if (img && img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, ex - eSize/2, ey - eSize/2, eSize, eSize);
-      } else {
-        ctx.fillStyle = "#42a5f5"; ctx.beginPath(); ctx.arc(ex, ey, eSize/2, 0, Math.PI * 2); ctx.fill();
+
+      // 攻撃モーション: プレイヤーがX軸100以内にいるとき揺れ＋エフェクト
+      const distX = Math.abs(state.playerX - state.enemyX);
+      const isAttacking = state.attackPoints.length === 0 && distX <= 100 && state.enemyHP > 0;
+      const shake = isAttacking ? Math.sin(Date.now() / 80) * 4 : 0;
+      const attackScale = isAttacking ? 1 + Math.abs(Math.sin(Date.now() / 150)) * 0.08 : 1;
+
+      // 攻撃中は赤いオーラ
+      if (isAttacking) {
+        const auraR = eSize * 0.7 * attackScale;
+        const auraAlpha = 0.25 + Math.abs(Math.sin(Date.now() / 200)) * 0.2;
+        ctx.save();
+        ctx.globalAlpha = auraAlpha;
+        ctx.fillStyle = "#FF1744";
+        ctx.beginPath();
+        ctx.arc(ex + shake, ey, auraR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 攻撃エフェクト: 斜め線（剣筋）
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,100,0," + (0.5 + Math.abs(Math.sin(Date.now() / 120)) * 0.5) + ")";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(ex + shake - eSize * 0.4, ey - eSize * 0.3);
+        ctx.lineTo(ex + shake + eSize * 0.1, ey + eSize * 0.3);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ex + shake - eSize * 0.1, ey - eSize * 0.4);
+        ctx.lineTo(ex + shake + eSize * 0.4, ey + eSize * 0.2);
+        ctx.stroke();
+        ctx.restore();
       }
+
+      ctx.save();
+      ctx.translate(ex + shake, ey);
+      ctx.scale(attackScale, attackScale);
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, -eSize/2, -eSize/2, eSize, eSize);
+      } else {
+        ctx.fillStyle = "#42a5f5"; ctx.beginPath(); ctx.arc(0, 0, eSize/2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
       
       const bw = eSize * 1.0, bh = 8;
       ctx.fillStyle = "#555"; ctx.fillRect(ex - bw/2, ey - eSize/2 - 14, bw, bh);
@@ -348,7 +385,7 @@ export class CanvasEngine {
     const sx = this.state.playerX, sy = this.state.playerY;
     
     for (let i = 1; i <= STEPS; i++) {
-      if (this.state.gameOver) return;
+      if (this.state.gameOver || this.state.gameWon) return;
       this.state.playerX = sx + (lx - sx) * (i / STEPS);
       this.state.playerY = sy + (ly - sy) * (i / STEPS);
       
@@ -407,6 +444,21 @@ export class CanvasEngine {
               this.state.coins.forEach(c => {
                 if (c.hidden) c.hidden = false;
               });
+            }
+          }
+        }
+        // オーク近くにいるとダメージ（attackPointsなしのステージ用）
+        // プレイヤーのX座標だけで判定（Y方向のオークとの距離は無視）
+        if (this.state.attackPoints.length === 0) {
+          const distX = Math.abs(this.state.playerX - this.state.enemyX);
+          if (distX <= 100) {
+            this.state.enemyHP = Math.max(0, this.state.enemyHP - 1);
+            this.state.damageEffects.push({
+              x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
+            });
+            // HP0になったら即クリアフラグ
+            if (this.state.enemyHP === 0) {
+              this.state.gameWon = true;
             }
           }
         }
