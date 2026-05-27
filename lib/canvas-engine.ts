@@ -10,7 +10,6 @@ export class AudioManager {
     return this.ctx;
   }
 
-  // 炎の発射音（シュワッ）
   playFireball() {
     try {
       const ctx = this.getCtx();
@@ -32,7 +31,6 @@ export class AudioManager {
     } catch {}
   }
 
-  // ダメージヒット音（ドカッ）
   playHit() {
     try {
       const ctx = this.getCtx();
@@ -54,7 +52,6 @@ export class AudioManager {
     } catch {}
   }
 
-  // 戦闘BGM（ループ）
   startBattleBgm() {
     if (this.isBgmPlaying) return;
     try {
@@ -65,10 +62,9 @@ export class AudioManager {
       this.isBgmPlaying = true;
       const bpm = 140;
       const beat = 60 / bpm;
-      // ドラムパターン（キック・スネア）
       const playDrum = (time: number) => {
         if (!this.isBgmPlaying) return;
-        const kick = [0, 2, 4, 6]; // 拍の位置
+        const kick = [0, 2, 4, 6];
         const snare = [2, 6];
         for (let measure = 0; measure < 2; measure++) {
           for (let b = 0; b < 8; b++) {
@@ -97,7 +93,6 @@ export class AudioManager {
             }
           }
         }
-        // メロディー（ファンファーレ風）
         const notes = [523, 659, 784, 659, 784, 880, 784, 1047];
         notes.forEach((freq, i) => {
           const t = time + i * beat * 0.5;
@@ -132,6 +127,8 @@ export const audioManager = new AudioManager();
 export interface GameState {
   playerX: number;
   playerY: number;
+  // ★ 第2章：向き（角度）のデータを追加
+  playerAngle: number;
   enemyX: number;
   enemyY: number;
   enemyHP: number;
@@ -162,7 +159,6 @@ export class CanvasEngine {
   private coinFrameTimer = 0;
   spritesLoaded = false;
   
-  // ★ トラップやアニメーションのための基準時間
   startTime: number = Date.now();
 
   get globalTime(): number {
@@ -184,7 +180,7 @@ export class CanvasEngine {
   }
 
   async loadAllSprites(): Promise<void> {
-    const v = "?v=" + Date.now(); // キャッシュバスター
+    const v = "?v=" + Date.now(); 
     const list: [string, string][] = [
       ["player",       "/sprites/player_front.png" + v],
       ["player_cast",  "/sprites/player_cast.png" + v],
@@ -225,16 +221,14 @@ export class CanvasEngine {
     this.spritesLoaded = true;
   }
 
-  // ★ 追加：トラップ（カミナリ）に当たっているかの判定
   checkTraps(): boolean {
     const t = this.globalTime;
     for (const trap of this.state.traps) {
       const cycle = trap.activePhase + trap.inactivePhase;
       const phaseTime = (t + trap.offset) % cycle;
-      // activePhase（危険な時間）の中にいるか
       if (phaseTime < trap.activePhase) {
         if (Math.hypot(this.state.playerX - trap.x, this.state.playerY - trap.y) < trap.radius) {
-          return true; // 当たった！
+          return true;
         }
       }
     }
@@ -281,13 +275,10 @@ export class CanvasEngine {
       const py = this.toCanvasY(trap.y);
       const r = trap.radius * (W / 400);
 
-      // 落雷まで何秒か（休み中のみ）
       const timeUntilBolt = isActive ? 0 : (cycle - phaseTime);
       const isWarning = !isActive && timeUntilBolt < 2.0;
 
       if (isActive) {
-        // ── 落雷中 ──
-        // 地面の危険エリア（赤→黄フラッシュ）
         const flash = 0.5 + Math.sin(now * 18) * 0.4;
         ctx.save();
         ctx.fillStyle = `rgba(255,220,0,${flash * 0.5})`;
@@ -296,7 +287,6 @@ export class CanvasEngine {
         ctx.lineWidth = 4; ctx.stroke();
         ctx.restore();
 
-        // 雷ボルト画像（上から地面まで）
         if (lbImg && lbImg.complete && lbImg.naturalWidth > 0) {
           const boltW = r * 1.0;
           ctx.save();
@@ -307,13 +297,10 @@ export class CanvasEngine {
           ctx.fillStyle = "white"; ctx.font = "bold 32px Arial";
           ctx.textAlign = "center"; ctx.fillText("⚡", px, py + 10);
         }
-
       } else {
-        // ── 待機中：魔法陣を表示 ──
         if (mcImg && mcImg.complete && mcImg.naturalWidth > 0) {
           ctx.save();
           ctx.translate(px, py);
-          // 警告時は高速回転＋点滅
           ctx.rotate(now * (isWarning ? 4.0 : 0.7));
           ctx.globalAlpha = isWarning
             ? 0.6 + Math.abs(Math.sin(now * 6)) * 0.4
@@ -323,14 +310,12 @@ export class CanvasEngine {
           ctx.filter = "none";
           ctx.restore();
         } else {
-          // フォールバック
           ctx.fillStyle = isWarning ? "rgba(255,80,0,0.25)" : "rgba(100,50,255,0.15)";
           ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = isWarning ? "rgba(255,150,0,0.9)" : "rgba(150,80,255,0.6)";
           ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
         }
 
-        // 警告カウントダウン表示
         if (isWarning) {
           ctx.save();
           ctx.font = `bold ${Math.round(r * 0.7)}px Arial`;
@@ -456,20 +441,17 @@ export class CanvasEngine {
     if (state.enemyHP > 0 && state.enemyType !== "none") {
       const ex = this.toCanvasX(state.enemyX), ey = this.toCanvasY(state.enemyY);
       const eSize = Math.round(W * 0.12);
-      // ダメージ直後はorc_hurtスプライトに切り替え
       const recentlyHit = state.damageEffects.some(e => e.alpha > 0.7);
       const enemySprite = (recentlyHit && state.enemyType === "orc")
         ? (this.sprites.get("orc_hurt") || this.sprites.get(state.enemyType))
         : this.sprites.get(state.enemyType);
       const img = enemySprite;
 
-      // 攻撃モーション: プレイヤーがX軸100以内にいるとき揺れ＋エフェクト
       const distX = Math.abs(state.playerX - state.enemyX);
       const isAttacking = state.attackPoints.length === 0 && distX <= 100 && state.enemyHP > 0;
       const shake = isAttacking ? Math.sin(Date.now() / 80) * 4 : 0;
       const attackScale = isAttacking ? 1 + Math.abs(Math.sin(Date.now() / 150)) * 0.08 : 1;
 
-      // 攻撃中は赤いオーラ
       if (isAttacking) {
         const auraR = eSize * 0.7 * attackScale;
         const auraAlpha = 0.25 + Math.abs(Math.sin(Date.now() / 200)) * 0.2;
@@ -481,7 +463,6 @@ export class CanvasEngine {
         ctx.fill();
         ctx.restore();
 
-        // 攻撃エフェクト: 斜め線（剣筋）
         ctx.save();
         ctx.strokeStyle = "rgba(255,100,0," + (0.5 + Math.abs(Math.sin(Date.now() / 120)) * 0.5) + ")";
         ctx.lineWidth = 3;
@@ -514,7 +495,6 @@ export class CanvasEngine {
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
       ctx.strokeRect(ex - bw/2, ey - eSize/2 - 14, bw, bh);
       
-      // HP99（倒せない設定）のときはHPバーの数値を隠す
       if (state.enemyMaxHP < 99) {
         ctx.fillStyle = "white"; ctx.font = "bold 9px Arial"; ctx.textAlign = "center";
         ctx.fillText(`HP ${state.enemyHP}/${state.enemyMaxHP}`, ex, ey - eSize/2 - 17);
@@ -522,16 +502,29 @@ export class CanvasEngine {
       ctx.textAlign = "left";
     }
 
-    // ── プレイヤー ──────────────────────────────────────────
+    // ── プレイヤー（第2章：角度による画像の切り替え） ──────────────────────────
     const px = this.toCanvasX(state.playerX);
     const py = this.toCanvasY(state.playerY);
     const pSize = Math.max(52, Math.round(W * 0.08));
-    // 魔法陣に乗っているときはcastポーズ
+
     const onAttackPoint = state.attackPoints.some(
       ap => !ap.hit && Math.hypot(state.playerX - ap.x, state.playerY - ap.y) <= ap.radius
     );
-    const playerSprite = onAttackPoint ? "player_cast" : "player";
-    const pImg = this.sprites.get(playerSprite) || this.sprites.get("player");
+    
+    // ★ 向いている角度（playerAngle）に合わせて画像を切り替える！
+    let spriteName = "player_front";
+    const angle = ((state.playerAngle % 360) + 360) % 360;
+
+    if (onAttackPoint) {
+      spriteName = "player_cast";
+    } else {
+      if (angle >= 45 && angle < 135) spriteName = "player_right";       // 90度（右）
+      else if (angle >= 135 && angle < 225) spriteName = "player_front"; // 180度（下）
+      else if (angle >= 225 && angle < 315) spriteName = "player_left";  // 270度（左）
+      else spriteName = "player_back";                                   // 0度（上）
+    }
+
+    const pImg = this.sprites.get(spriteName) || this.sprites.get("player");
     if (pImg && pImg.complete && pImg.naturalWidth > 0) {
       ctx.drawImage(pImg, px - pSize/2, py - pSize * 0.65, pSize, pSize);
     } else {
@@ -564,14 +557,12 @@ export class CanvasEngine {
 
         const fbImg = this.sprites.get("fireball");
         if (fbImg && fbImg.complete && fbImg.naturalWidth > 0) {
-          // 進行方向を向くように回転
           const angle = Math.atan2(fb.ty - fb.y, fb.tx - fb.x);
           ctx.save();
           ctx.translate(cx, cy);
           ctx.rotate(angle);
           ctx.drawImage(fbImg, -size*1.5, -size*0.8, size*3, size*1.6);
           ctx.restore();
-          // 尾（トレイル）
           for (let t = 1; t <= 3; t++) {
             const tp = Math.max(0, fb.progress - t * 0.06);
             const tx2 = fb.x + (fb.tx - fb.x) * tp;
@@ -584,7 +575,6 @@ export class CanvasEngine {
             ctx.restore();
           }
         } else {
-          // フォールバック：グラデーション円
           const grad1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 1.8);
           grad1.addColorStop(0, "rgba(255,200,50,0.9)");
           grad1.addColorStop(0.4, "rgba(255,80,0,0.7)");
@@ -594,12 +584,11 @@ export class CanvasEngine {
           ctx.arc(cx, cy, size * 1.8, 0, Math.PI * 2);
           ctx.fill();
         }
-
         ctx.restore();
       }
     }
 
-    // ── ダメージエフェクト（強化版）──────────────────────────────────────────
+    // ── ダメージエフェクト ──────────────────────────────────────────
     for (const eff of state.damageEffects) {
       const ex2 = this.toCanvasX(state.enemyX);
       const scale = 1 + (1 - eff.alpha) * 0.8;
@@ -607,18 +596,15 @@ export class CanvasEngine {
       ctx.globalAlpha = eff.alpha;
       ctx.translate(ex2, eff.y);
       ctx.scale(scale, scale);
-      // 影
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.font = `bold ${Math.round(W * 0.065)}px Arial`;
       ctx.textAlign = "center";
       ctx.fillText(eff.text, 2, 2);
-      // 本体（グラデーション風に二重描画）
       ctx.fillStyle = "#FF1744";
       ctx.fillText(eff.text, 0, 0);
       ctx.fillStyle = "#FFD600";
       ctx.font = `bold ${Math.round(W * 0.055)}px Arial`;
       ctx.fillText(eff.text, 0, 0);
-      // 衝撃波リング
       const ring = (1 - eff.alpha);
       ctx.strokeStyle = `rgba(255,100,0,${eff.alpha * 0.7})`;
       ctx.lineWidth = 2;
@@ -630,21 +616,17 @@ export class CanvasEngine {
 
     // ── 終了メッセージ ──────────────────────────────────────────
     if (state.gameOver) {
-      // 暗転
       ctx.fillStyle = "rgba(0,0,0,0.75)";
       ctx.fillRect(0, 0, W, H);
-      // 赤いスキャンライン風
       for (let i = 0; i < H; i += 4) {
         ctx.fillStyle = "rgba(255,0,0,0.04)";
         ctx.fillRect(0, i, W, 2);
       }
       const gof = Math.round(W * 0.09);
       ctx.textAlign = "center";
-      // 影
       ctx.fillStyle = "rgba(255,0,0,0.3)";
       ctx.font = `bold ${gof}px Arial`;
       ctx.fillText("GAME OVER", W/2 + 3, H/2 + 3);
-      // グロー
       ctx.fillStyle = "#FF1744";
       ctx.shadowColor = "#FF1744";
       ctx.shadowBlur = 30;
@@ -659,7 +641,6 @@ export class CanvasEngine {
     if (state.gameWon) {
       ctx.fillStyle = "rgba(0,0,0,0.7)";
       ctx.fillRect(0, 0, W, H);
-      // 金色の放射光
       const t2 = Date.now() / 1000;
       const rays = 12;
       for (let i = 0; i < rays; i++) {
@@ -676,11 +657,9 @@ export class CanvasEngine {
       }
       const cfs = Math.round(W * 0.09);
       ctx.textAlign = "center";
-      // 影
       ctx.fillStyle = "rgba(180,120,0,0.5)";
       ctx.font = `bold ${cfs}px Arial`;
       ctx.fillText("🎉 クリア！", W/2 + 3, H/2 + 3);
-      // グロー
       ctx.fillStyle = "#FFD600";
       ctx.shadowColor = "#FFD600";
       ctx.shadowBlur = 40;
@@ -696,7 +675,6 @@ export class CanvasEngine {
     if (this.coinFrameTimer >= 8) { this.coinFrame++; this.coinFrameTimer = 0; }
   }
 
-  // ★ movePlayer内でのリアルタイム当たり判定
   async movePlayer(lx: number, ly: number): Promise<void> {
     lx = Math.max(-200, Math.min(200, lx));
     ly = Math.max(-200, Math.min(200, ly));
@@ -707,7 +685,6 @@ export class CanvasEngine {
       if (this.state.gameOver || this.state.gameWon) return;
       this.state.playerX = sx + (lx - sx) * (i / STEPS);
       this.state.playerY = sy + (ly - sy) * (i / STEPS);
-      // 移動中は雷を避けながら走っている演出のため判定なし
       this.draw();
       await new Promise<void>(r => setTimeout(r, 16));
     }
@@ -739,18 +716,15 @@ export class CanvasEngine {
     }
   }
 
-  // ★ wait内でのリアルタイム当たり判定
   async wait(ms: number): Promise<void> {
     const STEPS = Math.floor(ms / 100); 
     for (let i = 0; i < STEPS; i++) {
       if (this.state.gameOver) return;
 
-      // 待っている間にトラップに当たったら即エラーを投げる
       if (this.checkTraps()) {
         throw new Error("TRAP_HIT");
       }
       
-      // 魔法陣の処理（1-2-1用）
       if (i % 10 === 9 && this.state.enemyHP > 0 && this.state.enemyType !== "none") {
         for (const ap of this.state.attackPoints) {
           if (!ap.hit && Math.hypot(this.state.playerX - ap.x, this.state.playerY - ap.y) <= ap.radius) {
@@ -758,7 +732,6 @@ export class CanvasEngine {
             this.state.damageEffects.push({
               x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
             });
-            // 炎弾を発射
             audioManager.playFireball();
             audioManager.playHit();
             if (!this.state.fireballEffects) this.state.fireballEffects = [];
@@ -778,8 +751,6 @@ export class CanvasEngine {
             }
           }
         }
-        // オーク近くにいるとダメージ（attackPointsなしのステージ用）
-        // プレイヤーのX座標だけで判定（Y方向のオークとの距離は無視）
         if (this.state.attackPoints.length === 0) {
           const distX = Math.abs(this.state.playerX - this.state.enemyX);
           if (distX <= 100) {
@@ -787,7 +758,6 @@ export class CanvasEngine {
             this.state.damageEffects.push({
               x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
             });
-            // HP0になったら即クリアフラグ
             if (this.state.enemyHP === 0) {
               this.state.gameWon = true;
             }

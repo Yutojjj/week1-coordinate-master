@@ -53,6 +53,7 @@ export default function StagePage({ params }: PageProps) {
 
     const initialState: GameState = {
       playerX: -150, playerY: -150,
+      playerAngle: 90, // ★ 追加：初期状態は右（90度）
       enemyX: stageConfig.enemyX, 
       enemyY: stageConfig.enemyY,
       enemyHP: stageConfig.enemyHP, 
@@ -103,6 +104,7 @@ export default function StagePage({ params }: PageProps) {
     engine.startTime = Date.now();
     engine.state.playerX = -150;
     engine.state.playerY = -150;
+    engine.state.playerAngle = 90; // ★ リセット
     engine.state.enemyHP = stageConfig.enemyHP;
     engine.state.gameOver = false;
     engine.state.gameWon = false;
@@ -174,15 +176,39 @@ export default function StagePage({ params }: PageProps) {
     const wait = (ms: number) =>
       stageConfig.allowWait ? engine.wait(Number(ms)) : Promise.resolve();
 
+    const checkEnemyAlive = async () => {
+      return engine.state.enemyHP > 0;
+    };
+
+    // ★ 第2章：角度を変える処理
+    const pointInDirection = async (angle: number) => {
+      if (timedOut || engine.state.gameOver) return;
+      engine.state.playerAngle = Number(angle);
+      engine.draw();
+      await new Promise<void>(r => setTimeout(r, 200)); 
+    };
+
+    // ★ 第2章：向いている方向に前進する処理（三角関数で計算）
+    const moveSteps = async (steps: number) => {
+      if (timedOut || engine.state.gameOver) return;
+      // Scratchの角度(0度が上, 90度が右)を元にXとYの移動量を計算
+      const rad = engine.state.playerAngle * (Math.PI / 180);
+      const dx = Math.sin(rad) * Number(steps);
+      const dy = Math.cos(rad) * Number(steps);
+      // 新しい座標へ移動
+      await movePlayer(engine.state.playerX + dx, engine.state.playerY + dy);
+    };
+
     try {
       const fn = new Function(
-        "movePlayer", "wait",
+        // ★ 第2章の関数も渡す
+        "movePlayer", "wait", "checkEnemyAlive", "pointInDirection", "moveSteps",
         `"use strict";
          let playerX = ${engine.state.playerX};
          let playerY = ${engine.state.playerY};
          return (async () => { ${code} })()`
       );
-      await fn(movePlayer, wait);
+      await fn(movePlayer, wait, checkEnemyAlive, pointInDirection, moveSteps);
     } catch (e: any) {
       if (e.message === "TRAP_HIT") {
         engine.state.gameOver = true;
@@ -208,12 +234,12 @@ export default function StagePage({ params }: PageProps) {
         engine.state.gameWon = true;
         engine.draw();
         setStatus("win");
-        setMessage(enemyDefeated ? "🎉 オークをたおした！クリア！" : "🎉 ぜんぶのコインをとった！クリア！");
+        setMessage(enemyDefeated ? "🎉 まものをたおした！クリア！" : "🎉 ぜんぶのコインをとった！クリア！");
         setIsCleared(true);
       } else if (left > 0 && engine.state.enemyType === "none") {
         setMessage(`コインがまだ ${left} このこっています！`);
       } else {
-        setMessage("オークをたおせなかった！もっとちかくにいよう！");
+        setMessage("まものをたおせなかった！もっとちかくにいよう！");
       }
     }
 
@@ -230,6 +256,7 @@ export default function StagePage({ params }: PageProps) {
     const e = engineRef.current;
     e.startTime = Date.now();
     e.state.playerX = -150; e.state.playerY = -150;
+    e.state.playerAngle = 90; // ★ リセット
     e.state.enemyHP = stageConfig.enemyHP;
     e.state.gameOver = false; e.state.gameWon = false;
     e.state.coins.forEach((c, i) => {
@@ -258,12 +285,13 @@ export default function StagePage({ params }: PageProps) {
     <div className="text-white text-center py-20">ステージがみつかりません</div>
   );
 
-  const stageNum = stageConfig.stage;
-  const stageColor = stageNum === 1 ? "from-blue-600 to-blue-800"
-    : stageNum === 2 ? "from-green-600 to-green-800"
+  // ★ chapter を使用してヘッダーのテキストを更新
+  const chNum = stageConfig.chapter;
+  const stageColor = chNum === 1 ? "from-blue-600 to-blue-800"
+    : chNum === 2 ? "from-purple-600 to-purple-800"
     : "from-red-600 to-red-800";
 
-  const stageIcon = stageNum === 1 ? "🪙" : stageNum === 2 ? "🪙🪙🪙🪙" : "🔥";
+  const stageIcon = chNum === 1 ? "🪙" : chNum === 2 ? "💧" : "🔥";
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column" }} className="bg-slate-900 relative">
@@ -274,11 +302,12 @@ export default function StagePage({ params }: PageProps) {
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-2xl">{stageIcon}</span>
-              <h1 className="text-xl font-bold text-white">
-                Stage {stageNum}-{stageConfig.area}：{stageConfig.title}
+              <h1 className="text-xl font-bold text-white tracking-wider" style={{ fontFamily: "'Orbitron', sans-serif" }}>
+                CHAPTER {chNum} <span className="mx-2 opacity-50">|</span> 
+                <span style={{ fontFamily: "'Zen Maru Gothic', sans-serif" }}>Stage {stageConfig.stage}-{stageConfig.area}：{stageConfig.title}</span>
               </h1>
             </div>
-            <p className="text-white text-opacity-90 text-xs">{stageConfig.story}</p>
+            <p className="text-white text-opacity-90 text-xs mt-1" style={{ fontFamily: "'Zen Maru Gothic', sans-serif" }}>{stageConfig.story}</p>
           </div>
           <div className="flex gap-2 items-center shrink-0 ml-4">
             {stageConfig.timeLimit > 0 && (
@@ -306,9 +335,8 @@ export default function StagePage({ params }: PageProps) {
       {/* ヒント */}
       <div className="bg-slate-700 px-4 py-1.5 border-b border-slate-600 shrink-0">
         <p className="text-yellow-300 text-xs font-medium">
-          {stageNum === 1 && "💡 ヒント：「Ｘを〇〇 Ｙを〇〇 にうごく」ブロックをつかってコインのざひょうにうごこう！"}
-          {stageNum === 2 && "💡 ヒント：「まつ」ブロックをつかうとうごきのあいだにじかんをおくことができるよ！いろいろためしてみよう！"}
-          {stageNum === 3 && `💡 ヒント：「まつ」のデフォルトは${stageConfig.defaultWaitSec}びょう！このままだとじかんぎれになるぞ！へらしてみよう！`}
+          {chNum === 1 && "💡 ヒント：「Ｘを〇〇 Ｙを〇〇 にうごく」ブロックや「まつ」ブロックをうまくつかおう！"}
+          {chNum === 2 && "💡 ヒント：ここからは「むき」と「前進（ほ うごかす）」がつかえるぞ！じぶんのむきをよくたしかめよう！"}
         </p>
       </div>
 
@@ -396,7 +424,7 @@ export default function StagePage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* 生成コード（確認用） */}
+      {/* 生成コード */}
       {code.trim() && (
         <div className="mx-3 mb-2 bg-slate-800 p-2 rounded text-xs shrink-0 z-10">
           <span className="text-slate-400">📄 コード：</span>

@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-const WEEKS = [
+// ★ WEEKS から CHAPTERS へ変更し、chapter プロパティを使用
+const CHAPTERS = [
   {
-    week: 1,
+    chapter: 1,
     title: "ざひょうとうごきをおぼえよう！",
     color: "#3B82F6",
     stages: [
@@ -37,7 +39,7 @@ const WEEKS = [
     ],
   },
   {
-    week: 2,
+    chapter: 2,
     title: "むきとくりかえしをおぼえよう！",
     color: "#A855F7",
     stages: [
@@ -183,31 +185,31 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Week一覧 */}
+        {/* Chapter一覧 */}
         <div className="max-w-3xl mx-auto px-4 pb-16 space-y-10">
-          {WEEKS.map((week, wi) => (
-            <div key={week.week} className="week-card">
-              {/* Weekヘッダー */}
+          {CHAPTERS.map((chapterData, wi) => (
+            <div key={chapterData.chapter} className="week-card">
+              {/* Chapterヘッダー */}
               <div className="flex items-center gap-4 mb-5">
                 <div className="relative">
                   <div className="absolute inset-0 rounded-full blur-md opacity-60"
-                    style={{ background: week.color }} />
+                    style={{ background: chapterData.color }} />
                   <div className="relative px-5 py-1.5 rounded-full font-black text-sm text-white border border-white/20"
                     style={{
-                      background: `linear-gradient(135deg, ${week.color}cc, ${week.color}88)`,
+                      background: `linear-gradient(135deg, ${chapterData.color}cc, ${chapterData.color}88)`,
                       fontFamily: "'Orbitron', sans-serif",
-                      boxShadow: `0 0 20px ${week.color}66`,
+                      boxShadow: `0 0 20px ${chapterData.color}66`,
                     }}>
-                    WEEK {week.week}
+                    CHAPTER {chapterData.chapter}
                   </div>
                 </div>
-                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${week.color}66, transparent)` }} />
-                <span className="text-white/50 text-xs" style={{ fontFamily: "'Zen Maru Gothic', sans-serif" }}>{week.title}</span>
+                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${chapterData.color}66, transparent)` }} />
+                <span className="text-white/50 text-xs" style={{ fontFamily: "'Zen Maru Gothic', sans-serif" }}>{chapterData.title}</span>
               </div>
 
               {/* Stage一覧 */}
               <div className="space-y-4">
-                {week.stages.map((stage) => (
+                {chapterData.stages.map((stage) => (
                   <div key={stage.stageNum}
                     className="rounded-2xl overflow-hidden border border-white/10"
                     style={{
@@ -227,7 +229,7 @@ export default function Home() {
                         <div className="flex items-center gap-2">
                           <span className="text-white/70 text-xs font-bold"
                             style={{ fontFamily: "'Orbitron', sans-serif" }}>
-                            {week.week}-{stage.stageNum}
+                            {chapterData.chapter}-{stage.stageNum}
                           </span>
                           <span className="text-white font-black text-base"
                             style={{ fontFamily: "'Zen Maru Gothic', sans-serif" }}>{stage.title}</span>
