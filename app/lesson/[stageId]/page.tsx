@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
-import { CanvasEngine, GameState } from "@/lib/canvas-engine";
+import { CanvasEngine, GameState, audioManager } from "@/lib/canvas-engine";
 import Canvas from "./components/Canvas";
 import dynamic from "next/dynamic";
 
@@ -61,6 +61,7 @@ export default function StagePage({ params }: PageProps) {
       coins, attackPoints, traps,
       gameOver: false, gameWon: false,
       damageEffects: [],
+      fireballEffects: [],
       explosionFrame: 0, explosionX: 0, explosionY: 0, showExplosion: false,
       showCoordLabels: stageConfig.showCoordLabels,
       timeLeft: 0,
@@ -74,7 +75,6 @@ export default function StagePage({ params }: PageProps) {
     engine.loadAllSprites().then(() => {
       engine.draw();
       const loop = () => {
-        // ★ 実行中でなくても、描画とトラップの点滅は進み続ける
         engine.tickDamageEffects();
         engine.draw();
         animRafRef.current = requestAnimationFrame(loop);
@@ -96,10 +96,10 @@ export default function StagePage({ params }: PageProps) {
     setStatus("running");
     setMessage("▶ じっこうちゅう...");
     setIsCleared(false);
+    audioManager.startBattleBgm();
 
     const engine = engineRef.current;
 
-    // ★ 実行開始時にタイマーや当たり判定の基準時間をリセットする
     engine.startTime = Date.now();
     engine.state.playerX = -150;
     engine.state.playerY = -150;
@@ -113,6 +113,7 @@ export default function StagePage({ params }: PageProps) {
     engine.state.attackPoints.forEach(a => a.hit = false);
     engine.state.timeLeft = stageConfig.timeLimit;
     engine.state.damageEffects = [];
+    engine.state.fireballEffects = [];
     setCollectedCoins(0);
     setTimeLeft(stageConfig.timeLimit);
     engine.draw();
@@ -144,30 +145,18 @@ export default function StagePage({ params }: PageProps) {
       await new Promise<void>((resolve, reject) => {
         const startTime = performance.now();
         const animate = (time: number) => {
-          if (timedOut) {
-            resolve();
-            return;
-          }
-          // ★ 移動アニメーション中も常にトラップ監視！
+          if (timedOut) { resolve(); return; }
           if (engine.checkTraps()) {
             engine.state.gameOver = true;
             reject(new Error("TRAP_HIT"));
             return;
           }
-
           const elapsed = performance.now() - startTime;
           const progress = Math.min(elapsed / duration, 1);
-          
           engine.state.playerX = startX + (targetX - startX) * progress;
           engine.state.playerY = startY + (targetY - startY) * progress;
-          
           engine.draw();
-          
-          if (progress < 1) {
-            requestAnimationFrame(animate);
-          } else {
-            resolve();
-          }
+          if (progress < 1) { requestAnimationFrame(animate); } else { resolve(); }
         };
         requestAnimationFrame(animate);
       });
@@ -195,7 +184,6 @@ export default function StagePage({ params }: PageProps) {
       );
       await fn(movePlayer, wait);
     } catch (e: any) {
-      // ★ カミナリに当たった時の専用エラーキャッチ
       if (e.message === "TRAP_HIT") {
         engine.state.gameOver = true;
         engine.draw();
@@ -208,7 +196,6 @@ export default function StagePage({ params }: PageProps) {
 
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-    // トラップでのゲームオーバーじゃなく、単純な時間切れの場合
     if (timedOut && !engine.state.gameWon && !engine.state.gameOver) {
       engine.state.gameOver = true;
       engine.draw();
@@ -232,6 +219,7 @@ export default function StagePage({ params }: PageProps) {
 
     engine.state.timeLeft = 0;
     engine.draw();
+    audioManager.stopBgm();
     isRunningRef.current = false;
     setIsRunning(false);
   }, [code, stageConfig]);
@@ -240,8 +228,6 @@ export default function StagePage({ params }: PageProps) {
     if (!engineRef.current || !stageConfig || isRunningRef.current) return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     const e = engineRef.current;
-    
-    // ★ リセット時にも基準時間を直す
     e.startTime = Date.now();
     e.state.playerX = -150; e.state.playerY = -150;
     e.state.enemyHP = stageConfig.enemyHP;
@@ -253,6 +239,7 @@ export default function StagePage({ params }: PageProps) {
     e.state.attackPoints.forEach(a => a.hit = false);
     e.state.timeLeft = 0;
     e.state.damageEffects = [];
+    e.state.fireballEffects = [];
     setCollectedCoins(0);
     setTimeLeft(stageConfig.timeLimit);
     setStatus("idle");

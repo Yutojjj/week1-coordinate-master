@@ -146,39 +146,14 @@ export const STAGES: Record<string, StageConfig> = {
     allowWait: true,
     showCoordLabels: true,
     defaultWaitSec: 3,
-    nextStageId: "1-2-3",
-    traps: [
-      // タイムライン: t=0〜3待つ(安全) → t=3.5〜6.5 X=-50で待つ(左休み) → t=7〜10 X=50で待つ(右休み)
-      // 左雷(X=-50): t=0〜3アクティブ、t=3〜9休み、t=9〜アクティブ
-      { id: 1, x: -50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 6, offset: 0 },
-      // 右雷(X=50): t=0〜7休み、t=7〜10アクティブ... ではなく t=7〜10休みにするためoffset=5
-      { id: 2, x: 50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 6, offset: 5 }
-    ],
-  },
-  "1-2-3": {
-    week: 1, stage: 2, area: 3,
-    title: "ざひょうなし！(エリア3)",
-    story: "こんどはざひょうがみえないぞ！じぶんでかんがえてみよう！",
-    goal: "座標を自分で考える・時間調整の総仕上げ",
-    timeLimit: 8,
-    enemyType: "none", enemyHP: 0, enemyX: 0, enemyY: 0,
-    attackPoints: [],
-    coins: [
-      { x: -130, y: 90 },
-      { x: 160, y: 40 },
-      { x: -30, y: -10 },
-      { x: -110, y: -140 },
-      { x: 120, y: -100 }
-    ],
-    enemySpeed: 0,
-    blocklyBlocks: ["move_xy", "move_x", "move_y", "move_dx", "move_dy", "wait"],
-    allowWait: true,
-    showCoordLabels: false,
-    defaultWaitSec: 1,
     nextStageId: "2-1-1",
-    traps: [],
+    traps: [
+      // 完全交互: 左3秒ON→両方OFF→右3秒ON→両方OFF を繰り返す(cycle=7秒)
+      // 移動中(0.5秒)は無敵なのでブロック: 3秒待つ→X=-50(3秒)→X=50(3秒)→X=-50(3秒) でクリア
+      { id: 1, x: -50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 4, offset: 0 },
+      { id: 2, x: 50, y: 0, radius: 45, type: "lightning", activePhase: 3, inactivePhase: 4, offset: 3.5 }
+    ],
   },
-
   // ─────────────────────────────────────────────────────────
   // Week 2, Stage 1：スライム討伐（向きの変更と相対移動）
   // ─────────────────────────────────────────────────────────

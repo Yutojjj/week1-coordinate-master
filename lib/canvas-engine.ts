@@ -1,3 +1,134 @@
+// ── BGM・SE管理 ──────────────────────────────────────────
+export class AudioManager {
+  private ctx: AudioContext | null = null;
+  private bgmNodes: AudioNode[] = [];
+  private bgmGain: GainNode | null = null;
+  private isBgmPlaying = false;
+
+  private getCtx(): AudioContext {
+    if (!this.ctx) this.ctx = new AudioContext();
+    return this.ctx;
+  }
+
+  // 炎の発射音（シュワッ）
+  playFireball() {
+    try {
+      const ctx = this.getCtx();
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.4, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      g.connect(ctx.destination);
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.4, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / ctx.sampleRate;
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 8) * 0.6
+                + Math.sin(2 * Math.PI * (800 - t * 1200) * t) * Math.exp(-t * 5) * 0.4;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g);
+      src.start();
+    } catch {}
+  }
+
+  // ダメージヒット音（ドカッ）
+  playHit() {
+    try {
+      const ctx = this.getCtx();
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.5, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+      g.connect(ctx.destination);
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.3, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / ctx.sampleRate;
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 15) * 0.8
+                + Math.sin(2 * Math.PI * 120 * t) * Math.exp(-t * 10) * 0.5;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g);
+      src.start();
+    } catch {}
+  }
+
+  // 戦闘BGM（ループ）
+  startBattleBgm() {
+    if (this.isBgmPlaying) return;
+    try {
+      const ctx = this.getCtx();
+      this.bgmGain = ctx.createGain();
+      this.bgmGain.gain.setValueAtTime(0.15, ctx.currentTime);
+      this.bgmGain.connect(ctx.destination);
+      this.isBgmPlaying = true;
+      const bpm = 140;
+      const beat = 60 / bpm;
+      // ドラムパターン（キック・スネア）
+      const playDrum = (time: number) => {
+        if (!this.isBgmPlaying) return;
+        const kick = [0, 2, 4, 6]; // 拍の位置
+        const snare = [2, 6];
+        for (let measure = 0; measure < 2; measure++) {
+          for (let b = 0; b < 8; b++) {
+            const t = time + (measure * 8 + b) * beat * 0.5;
+            if (kick.includes(b)) {
+              const g = ctx.createGain();
+              g.gain.setValueAtTime(0.5, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+              g.connect(this.bgmGain!);
+              const osc = ctx.createOscillator();
+              osc.frequency.setValueAtTime(150, t);
+              osc.frequency.exponentialRampToValueAtTime(40, t + 0.3);
+              osc.connect(g);
+              osc.start(t); osc.stop(t + 0.3);
+            }
+            if (snare.includes(b)) {
+              const g = ctx.createGain();
+              g.gain.setValueAtTime(0.3, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+              g.connect(this.bgmGain!);
+              const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
+              const d = buf.getChannelData(0);
+              for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 8);
+              const src = ctx.createBufferSource();
+              src.buffer = buf; src.connect(g); src.start(t);
+            }
+          }
+        }
+        // メロディー（ファンファーレ風）
+        const notes = [523, 659, 784, 659, 784, 880, 784, 1047];
+        notes.forEach((freq, i) => {
+          const t = time + i * beat * 0.5;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0.12, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.45);
+          g.connect(this.bgmGain!);
+          const osc = ctx.createOscillator();
+          osc.type = "square";
+          osc.frequency.value = freq;
+          osc.connect(g);
+          osc.start(t); osc.stop(t + beat * 0.45);
+        });
+        setTimeout(() => playDrum(ctx.currentTime), (8 * beat * 0.5 - 0.1) * 1000);
+      };
+      playDrum(ctx.currentTime);
+    } catch {}
+  }
+
+  stopBgm() {
+    this.isBgmPlaying = false;
+    try {
+      if (this.bgmGain) {
+        this.bgmGain.gain.exponentialRampToValueAtTime(0.001, this.getCtx().currentTime + 0.5);
+      }
+    } catch {}
+  }
+}
+
+export const audioManager = new AudioManager();
+
 export interface GameState {
   playerX: number;
   playerY: number;
@@ -12,6 +143,7 @@ export interface GameState {
   gameOver: boolean;
   gameWon: boolean;
   damageEffects: { x: number; y: number; text: string; alpha: number }[];
+  fireballEffects: { x: number; y: number; tx: number; ty: number; progress: number; id: number }[];
   explosionFrame: number;
   explosionX: number;
   explosionY: number;
@@ -52,22 +184,29 @@ export class CanvasEngine {
   }
 
   async loadAllSprites(): Promise<void> {
+    const v = "?v=" + Date.now(); // キャッシュバスター
     const list: [string, string][] = [
-      ["player",       "/sprites/player_front.png"],
-      ["player_left",  "/sprites/player_left.png"],
-      ["player_right", "/sprites/player_right.png"],
-      ["player_back",  "/sprites/player_back.png"],
-      ["slime",        "/sprites/enemy_slime.png"],
-      ["orc",          "/sprites/enemy_orc.png"],
-      ["bat",          "/sprites/enemy_bat.png"], 
-      ["coin1",        "/sprites/coin_frame1.png"],
-      ["coin2",        "/sprites/coin_frame2.png"],
-      ["coin3",        "/sprites/coin_frame3.png"],
-      ["coin4",        "/sprites/coin_frame4.png"],
-      ["exp1",         "/sprites/explosion_frame1.png"],
-      ["exp2",         "/sprites/explosion_frame2.png"],
-      ["exp3",         "/sprites/explosion_frame3.png"],
-      ["exp4",         "/sprites/explosion_frame4.png"],
+      ["player",       "/sprites/player_front.png" + v],
+      ["player_cast",  "/sprites/player_cast.png" + v],
+      ["player_hurt",  "/sprites/player_hurt.png" + v],
+      ["orc_hurt",     "/sprites/orc_hurt.png" + v],
+      ["fireball",     "/sprites/fireball.png" + v],
+      ["magic_circle", "/sprites/magic_circle.png" + v],
+      ["lightning_bolt","/sprites/lightning_bolt.png" + v],
+      ["player_left",  "/sprites/player_left.png" + v],
+      ["player_right", "/sprites/player_right.png" + v],
+      ["player_back",  "/sprites/player_back.png" + v],
+      ["slime",        "/sprites/enemy_slime.png" + v],
+      ["orc",          "/sprites/enemy_orc.png" + v],
+      ["bat",          "/sprites/enemy_bat.png" + v],
+      ["coin1",        "/sprites/coin_frame1.png" + v],
+      ["coin2",        "/sprites/coin_frame2.png" + v],
+      ["coin3",        "/sprites/coin_frame3.png" + v],
+      ["coin4",        "/sprites/coin_frame4.png" + v],
+      ["exp1",         "/sprites/explosion_frame1.png" + v],
+      ["exp2",         "/sprites/explosion_frame2.png" + v],
+      ["exp3",         "/sprites/explosion_frame3.png" + v],
+      ["exp4",         "/sprites/explosion_frame4.png" + v],
     ];
     await Promise.all([
       ...list.map(([name, src]) => new Promise<void>(res => {
@@ -128,8 +267,12 @@ export class CanvasEngine {
       ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
     }
 
-    // ── トラップ（雷）の描画（背景とキャラの間） ───────────────────
+    // ── トラップ（雷）の描画 ───────────────────
     const t = this.globalTime;
+    const mcImg = this.sprites.get("magic_circle");
+    const lbImg = this.sprites.get("lightning_bolt");
+    const now = Date.now() / 1000;
+
     for (const trap of state.traps) {
       const cycle = trap.activePhase + trap.inactivePhase;
       const phaseTime = (t + trap.offset) % cycle;
@@ -138,24 +281,66 @@ export class CanvasEngine {
       const py = this.toCanvasY(trap.y);
       const r = trap.radius * (W / 400);
 
+      // 落雷まで何秒か（休み中のみ）
+      const timeUntilBolt = isActive ? 0 : (cycle - phaseTime);
+      const isWarning = !isActive && timeUntilBolt < 2.0;
+
       if (isActive) {
-        // 雷（危険・黄色）
-        ctx.fillStyle = "rgba(255, 255, 0, 0.6)";
+        // ── 落雷中 ──
+        // 地面の危険エリア（赤→黄フラッシュ）
+        const flash = 0.5 + Math.sin(now * 18) * 0.4;
+        ctx.save();
+        ctx.fillStyle = `rgba(255,220,0,${flash * 0.5})`;
         ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "#FFD600";
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.fillStyle = "white"; ctx.font = "bold 24px Arial"; ctx.textAlign = "center";
-        ctx.fillText("⚡", px, py + 8);
+        ctx.strokeStyle = `rgba(255,255,100,${flash})`;
+        ctx.lineWidth = 4; ctx.stroke();
+        ctx.restore();
+
+        // 雷ボルト画像（上から地面まで）
+        if (lbImg && lbImg.complete && lbImg.naturalWidth > 0) {
+          const boltW = r * 1.0;
+          ctx.save();
+          ctx.globalAlpha = 0.75 + Math.sin(now * 30) * 0.25;
+          ctx.drawImage(lbImg, px - boltW / 2, 0, boltW, py + r * 0.5);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = "white"; ctx.font = "bold 32px Arial";
+          ctx.textAlign = "center"; ctx.fillText("⚡", px, py + 10);
+        }
+
       } else {
-        // 予告（安全・薄い赤点線）
-        ctx.fillStyle = "rgba(255, 0, 0, 0.1)";
-        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "rgba(255, 0, 0, 0.4)";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 6]);
-        ctx.stroke();
-        ctx.setLineDash([]); // 元に戻す
+        // ── 待機中：魔法陣を表示 ──
+        if (mcImg && mcImg.complete && mcImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.translate(px, py);
+          // 警告時は高速回転＋点滅
+          ctx.rotate(now * (isWarning ? 4.0 : 0.7));
+          ctx.globalAlpha = isWarning
+            ? 0.6 + Math.abs(Math.sin(now * 6)) * 0.4
+            : 0.55;
+          if (isWarning) ctx.filter = "hue-rotate(180deg) saturate(3) brightness(1.5)";
+          ctx.drawImage(mcImg, -r, -r, r * 2, r * 2);
+          ctx.filter = "none";
+          ctx.restore();
+        } else {
+          // フォールバック
+          ctx.fillStyle = isWarning ? "rgba(255,80,0,0.25)" : "rgba(100,50,255,0.15)";
+          ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = isWarning ? "rgba(255,150,0,0.9)" : "rgba(150,80,255,0.6)";
+          ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        // 警告カウントダウン表示
+        if (isWarning) {
+          ctx.save();
+          ctx.font = `bold ${Math.round(r * 0.7)}px Arial`;
+          ctx.textAlign = "center";
+          ctx.fillStyle = "rgba(0,0,0,0.6)";
+          ctx.fillText(`${Math.ceil(timeUntilBolt)}`, px + 2, py + 6);
+          ctx.fillStyle = "#FFD600";
+          ctx.fillText(`${Math.ceil(timeUntilBolt)}`, px, py + 5);
+          ctx.restore();
+        }
       }
     }
 
@@ -237,21 +422,32 @@ export class CanvasEngine {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
     const rScale = W / 400;
     for (const ap of state.attackPoints) {
-      if (ap.hit) continue; 
-      const px = this.toCanvasX(ap.x), py = this.toCanvasY(ap.y);
+      if (ap.hit) continue;
+      const apx = this.toCanvasX(ap.x), apy = this.toCanvasY(ap.y);
       const r = ap.radius * rScale;
-      ctx.strokeStyle = `rgba(255,50,50,${0.5 + 0.4 * pulse})`; 
-      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = `rgba(255,100,50,${0.2 + 0.1 * pulse})`;
-      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#FF5252"; ctx.font = "bold 13px Arial"; ctx.textAlign = "center";
-      ctx.fillText(`🔥`, px, py + 5);
+      const t2 = Date.now() / 1000;
+      const mcImg = this.sprites.get("magic_circle");
+      if (mcImg && mcImg.complete && mcImg.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(apx, apy);
+        ctx.rotate(t2 * 0.8);
+        const scalePulse = 1 + Math.sin(t2 * 2) * 0.04;
+        ctx.scale(scalePulse, scalePulse);
+        ctx.globalAlpha = 0.85 + Math.sin(t2 * 3) * 0.1;
+        ctx.drawImage(mcImg, -r, -r, r * 2, r * 2);
+        ctx.restore();
+      } else {
+        ctx.strokeStyle = `rgba(180,100,255,${0.5 + 0.4 * pulse})`;
+        ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(apx, apy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = `rgba(180,100,255,${0.15 + 0.1 * pulse})`;
+        ctx.beginPath(); ctx.arc(apx, apy, r, 0, Math.PI * 2); ctx.fill();
+      }
       if (state.showCoordLabels) {
-        ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(px - 27, py + r + 2, 54, 14);
+        ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(apx - 27, apy + r + 2, 54, 14);
         ctx.fillStyle = "#FF5252"; ctx.font = "bold 9px monospace"; ctx.textAlign = "left";
-        ctx.fillText(`X:${ap.x}`, px - 25, py + r + 13);
+        ctx.fillText(`X:${ap.x}`, apx - 25, apy + r + 13);
         ctx.fillStyle = "#42A5F5"; ctx.textAlign = "right";
-        ctx.fillText(`Y:${ap.y}`, px + 25, py + r + 13);
+        ctx.fillText(`Y:${ap.y}`, apx + 25, apy + r + 13);
       }
       ctx.textAlign = "left";
     }
@@ -260,7 +456,12 @@ export class CanvasEngine {
     if (state.enemyHP > 0 && state.enemyType !== "none") {
       const ex = this.toCanvasX(state.enemyX), ey = this.toCanvasY(state.enemyY);
       const eSize = Math.round(W * 0.12);
-      const img = this.sprites.get(state.enemyType);
+      // ダメージ直後はorc_hurtスプライトに切り替え
+      const recentlyHit = state.damageEffects.some(e => e.alpha > 0.7);
+      const enemySprite = (recentlyHit && state.enemyType === "orc")
+        ? (this.sprites.get("orc_hurt") || this.sprites.get(state.enemyType))
+        : this.sprites.get(state.enemyType);
+      const img = enemySprite;
 
       // 攻撃モーション: プレイヤーがX軸100以内にいるとき揺れ＋エフェクト
       const distX = Math.abs(state.playerX - state.enemyX);
@@ -325,7 +526,12 @@ export class CanvasEngine {
     const px = this.toCanvasX(state.playerX);
     const py = this.toCanvasY(state.playerY);
     const pSize = Math.max(52, Math.round(W * 0.08));
-    const pImg = this.sprites.get("player");
+    // 魔法陣に乗っているときはcastポーズ
+    const onAttackPoint = state.attackPoints.some(
+      ap => !ap.hit && Math.hypot(state.playerX - ap.x, state.playerY - ap.y) <= ap.radius
+    );
+    const playerSprite = onAttackPoint ? "player_cast" : "player";
+    const pImg = this.sprites.get(playerSprite) || this.sprites.get("player");
     if (pImg && pImg.complete && pImg.naturalWidth > 0) {
       ctx.drawImage(pImg, px - pSize/2, py - pSize * 0.65, pSize, pSize);
     } else {
@@ -345,31 +551,144 @@ export class CanvasEngine {
     }
     ctx.textAlign = "left";
 
-    // ── ダメージエフェクト ──────────────────────────────────────────
+    // ── 炎弾エフェクト ──────────────────────────────────────────
+    if (this.state.fireballEffects) {
+      for (const fb of this.state.fireballEffects) {
+        const cx = fb.x + (fb.tx - fb.x) * fb.progress;
+        const cy = fb.y + (fb.ty - fb.y) * fb.progress;
+        const alpha = fb.progress < 0.8 ? 1 : (1 - fb.progress) / 0.2;
+        const size = 10 + Math.sin(fb.progress * Math.PI) * 8;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        const fbImg = this.sprites.get("fireball");
+        if (fbImg && fbImg.complete && fbImg.naturalWidth > 0) {
+          // 進行方向を向くように回転
+          const angle = Math.atan2(fb.ty - fb.y, fb.tx - fb.x);
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(angle);
+          ctx.drawImage(fbImg, -size*1.5, -size*0.8, size*3, size*1.6);
+          ctx.restore();
+          // 尾（トレイル）
+          for (let t = 1; t <= 3; t++) {
+            const tp = Math.max(0, fb.progress - t * 0.06);
+            const tx2 = fb.x + (fb.tx - fb.x) * tp;
+            const ty2 = fb.y + (fb.ty - fb.y) * tp;
+            ctx.save();
+            ctx.globalAlpha = alpha * (1 - t * 0.28) * 0.5;
+            ctx.translate(tx2, ty2);
+            ctx.rotate(angle);
+            ctx.drawImage(fbImg, -size, -size*0.5, size*2, size);
+            ctx.restore();
+          }
+        } else {
+          // フォールバック：グラデーション円
+          const grad1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 1.8);
+          grad1.addColorStop(0, "rgba(255,200,50,0.9)");
+          grad1.addColorStop(0.4, "rgba(255,80,0,0.7)");
+          grad1.addColorStop(1, "rgba(255,0,0,0)");
+          ctx.fillStyle = grad1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, size * 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    // ── ダメージエフェクト（強化版）──────────────────────────────────────────
     for (const eff of state.damageEffects) {
       const ex2 = this.toCanvasX(state.enemyX);
+      const scale = 1 + (1 - eff.alpha) * 0.8;
+      ctx.save();
       ctx.globalAlpha = eff.alpha;
-      ctx.fillStyle = "#FF5252"; ctx.font = "bold 22px Arial"; ctx.textAlign = "center";
-      ctx.fillText(eff.text, ex2, eff.y);
-      ctx.textAlign = "left"; ctx.globalAlpha = 1;
+      ctx.translate(ex2, eff.y);
+      ctx.scale(scale, scale);
+      // 影
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.font = `bold ${Math.round(W * 0.065)}px Arial`;
+      ctx.textAlign = "center";
+      ctx.fillText(eff.text, 2, 2);
+      // 本体（グラデーション風に二重描画）
+      ctx.fillStyle = "#FF1744";
+      ctx.fillText(eff.text, 0, 0);
+      ctx.fillStyle = "#FFD600";
+      ctx.font = `bold ${Math.round(W * 0.055)}px Arial`;
+      ctx.fillText(eff.text, 0, 0);
+      // 衝撃波リング
+      const ring = (1 - eff.alpha);
+      ctx.strokeStyle = `rgba(255,100,0,${eff.alpha * 0.7})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, ring * 30, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // ── 終了メッセージ ──────────────────────────────────────────
     if (state.gameOver) {
-      ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = "#F44336";
-      ctx.font = `bold ${Math.round(W * 0.08)}px Arial`;
-      ctx.textAlign = "center"; ctx.fillText("GAME OVER", W/2, H/2 - 20);
+      // 暗転
+      ctx.fillStyle = "rgba(0,0,0,0.75)";
+      ctx.fillRect(0, 0, W, H);
+      // 赤いスキャンライン風
+      for (let i = 0; i < H; i += 4) {
+        ctx.fillStyle = "rgba(255,0,0,0.04)";
+        ctx.fillRect(0, i, W, 2);
+      }
+      const gof = Math.round(W * 0.09);
+      ctx.textAlign = "center";
+      // 影
+      ctx.fillStyle = "rgba(255,0,0,0.3)";
+      ctx.font = `bold ${gof}px Arial`;
+      ctx.fillText("GAME OVER", W/2 + 3, H/2 + 3);
+      // グロー
+      ctx.fillStyle = "#FF1744";
+      ctx.shadowColor = "#FF1744";
+      ctx.shadowBlur = 30;
+      ctx.fillText("GAME OVER", W/2, H/2);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.font = `${Math.round(W * 0.033)}px Arial`;
+      ctx.fillText("もういちどためしてみよう！", W/2, H/2 + gof * 0.9);
       ctx.textAlign = "left";
     }
 
     if (state.gameWon) {
-      ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(0, 0, W, H);
+      // 金色の放射光
+      const t2 = Date.now() / 1000;
+      const rays = 12;
+      for (let i = 0; i < rays; i++) {
+        const angle = (i / rays) * Math.PI * 2 + t2 * 0.5;
+        const grad = ctx.createLinearGradient(W/2, H/2, W/2 + Math.cos(angle)*W*0.6, H/2 + Math.sin(angle)*H*0.6);
+        grad.addColorStop(0, "rgba(255,215,0,0.15)");
+        grad.addColorStop(1, "rgba(255,215,0,0)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(W/2, H/2);
+        ctx.arc(W/2, H/2, W*0.8, angle - 0.15, angle + 0.15);
+        ctx.closePath();
+        ctx.fill();
+      }
+      const cfs = Math.round(W * 0.09);
+      ctx.textAlign = "center";
+      // 影
+      ctx.fillStyle = "rgba(180,120,0,0.5)";
+      ctx.font = `bold ${cfs}px Arial`;
+      ctx.fillText("🎉 クリア！", W/2 + 3, H/2 + 3);
+      // グロー
       ctx.fillStyle = "#FFD600";
-      ctx.font = `bold ${Math.round(W * 0.07)}px Arial`;
-      ctx.textAlign = "center"; ctx.fillText("🎉 クリア！", W/2, H/2 - 20);
-      ctx.fillStyle = "white"; ctx.font = `${Math.round(W * 0.03)}px Arial`;
-      ctx.fillText("おめでとう！", W/2, H/2 + 36);
+      ctx.shadowColor = "#FFD600";
+      ctx.shadowBlur = 40;
+      ctx.fillText("🎉 クリア！", W/2, H/2);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = `bold ${Math.round(W * 0.036)}px Arial`;
+      ctx.fillText("すごい！よくできました！", W/2, H/2 + cfs * 0.95);
       ctx.textAlign = "left";
     }
 
@@ -388,12 +707,7 @@ export class CanvasEngine {
       if (this.state.gameOver || this.state.gameWon) return;
       this.state.playerX = sx + (lx - sx) * (i / STEPS);
       this.state.playerY = sy + (ly - sy) * (i / STEPS);
-      
-      // 移動中にトラップに当たったら即エラーを投げて止まる
-      if (this.checkTraps()) {
-        throw new Error("TRAP_HIT");
-      }
-      
+      // 移動中は雷を避けながら走っている演出のため判定なし
       this.draw();
       await new Promise<void>(r => setTimeout(r, 16));
     }
@@ -418,6 +732,11 @@ export class CanvasEngine {
     this.state.damageEffects = this.state.damageEffects
       .map(e => ({ ...e, y: e.y - 1.5, alpha: e.alpha - 0.025 }))
       .filter(e => e.alpha > 0);
+    if (this.state.fireballEffects) {
+      this.state.fireballEffects = this.state.fireballEffects
+        .map(f => ({ ...f, progress: f.progress + 0.04 }))
+        .filter(f => f.progress < 1.0);
+    }
   }
 
   // ★ wait内でのリアルタイム当たり判定
@@ -438,6 +757,18 @@ export class CanvasEngine {
             this.state.enemyHP = Math.max(0, this.state.enemyHP - 1);
             this.state.damageEffects.push({
               x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
+            });
+            // 炎弾を発射
+            audioManager.playFireball();
+            audioManager.playHit();
+            if (!this.state.fireballEffects) this.state.fireballEffects = [];
+            this.state.fireballEffects.push({
+              x: this.toCanvasX(this.state.playerX),
+              y: this.toCanvasY(this.state.playerY),
+              tx: this.toCanvasX(this.state.enemyX),
+              ty: this.toCanvasY(this.state.enemyY),
+              progress: 0,
+              id: Date.now() + Math.random(),
             });
             if (this.state.enemyHP === 0) {
               ap.hit = true;
