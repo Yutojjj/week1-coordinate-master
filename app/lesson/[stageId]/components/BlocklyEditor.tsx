@@ -8,6 +8,7 @@ interface BlocklyEditorProps {
   stageBlocks: string[];
   allowWait: boolean;
   defaultWaitSec: number;
+  pointToTargets?: [string, string][];
 }
 
 export default function BlocklyEditor({
@@ -15,6 +16,7 @@ export default function BlocklyEditor({
   stageBlocks,
   allowWait,
   defaultWaitSec,
+  pointToTargets,
 }: BlocklyEditorProps) {
   const blocklyDiv = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<any>(null);
@@ -26,6 +28,7 @@ export default function BlocklyEditor({
     const _stageBlocks = stageBlocks;
     const _allowWait = allowWait;
     const _defaultWaitSec = defaultWaitSec;
+    const _pointToTargets = pointToTargets;
 
     const initBlockly = async () => {
       const BlocklyModule = await import("blockly");
@@ -180,13 +183,11 @@ export default function BlocklyEditor({
       };
 
       // 第2章：〇へむける（オートエイム）
-      const isCoinStage = _stageBlocks.includes("point_to_coin");
-      const hasOrc = _stageBlocks.includes("point_to_target") && !isCoinStage;
-      const targetOpts: [string, string][] = isCoinStage
-        ? [["ポーション", "coin0"], ["むらびと", "coin1"]]
-        : hasOrc
-        ? [["まほうじん1", "circle1"], ["まほうじん2", "circle2"], ["オーク", "orc"]]
-        : [["スライム", "slime"], ["オーク", "orc"], ["まほうじん1", "circle1"], ["まほうじん2", "circle2"]];
+      // stageConfig から自動生成された候補があればそれを使い、なければ空フォールバック
+      const targetOpts: [string, string][] =
+        _pointToTargets && _pointToTargets.length > 0
+          ? _pointToTargets
+          : [["てき", "enemy"]];
 
       Blockly.Blocks["point_to_target"] = {
         init(this: any) {
@@ -349,7 +350,7 @@ export default function BlocklyEditor({
         workspaceRef.current = null;
       }
     };
-  }, [stageBlocks, allowWait, defaultWaitSec]);
+  }, [stageBlocks, allowWait, defaultWaitSec, pointToTargets]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px", height: "100%" }}>

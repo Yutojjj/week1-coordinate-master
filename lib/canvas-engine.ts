@@ -1064,26 +1064,36 @@ export class CanvasEngine {
         for (const ap of this.state.attackPoints) {
           if (!ap.hit && Math.hypot(this.state.playerX - ap.x, this.state.playerY - ap.y) <= ap.radius) {
 
-            // ── ファイアボールが敵に当たるか角度で判定 ──
+            // ── ファイアボールが敵に当たるか判定 ──
             const dx = this.state.enemyX - this.state.playerX;
             const dy = this.state.enemyY - this.state.playerY;
-            // playerAngle から計算した方向ベクトル（Scratch系: 上=0, 右=90）
-            const rad = this.state.playerAngle * (Math.PI / 180);
-            const fbDirX = Math.sin(rad);
-            const fbDirY = Math.cos(rad);
-            // 敵方向の角度とファイアボール方向の角度の差
-            const enemyAngle = Math.atan2(dx, dy) * (180 / Math.PI);
-            let angleDiff = Math.abs(this.state.playerAngle - enemyAngle) % 360;
-            if (angleDiff > 180) angleDiff = 360 - angleDiff;
-            const HIT_THRESHOLD = 5; // ±5度以内なら命中
-            const isHit = angleDiff <= HIT_THRESHOLD;
 
-            // ファイアボール発射（常に角度方向へ）
+            // 第1章：魔法陣に乗ったら自動で敵に向かって発射（向けるを習う前なのでオートエイム）
+            // 第2章以降：playerAngle の角度が敵方向と一致しているか判定
+            let isHit: boolean;
+            let fbTargetX: number;
+            let fbTargetY: number;
+
+            if (this.state.chapter <= 1) {
+              fbTargetX = this.state.enemyX;
+              fbTargetY = this.state.enemyY;
+              isHit = true;
+            } else {
+              const rad = this.state.playerAngle * (Math.PI / 180);
+              const fbDirX = Math.sin(rad);
+              const fbDirY = Math.cos(rad);
+              fbTargetX = this.state.playerX + fbDirX * 400;
+              fbTargetY = this.state.playerY + fbDirY * 400;
+              const enemyAngle = Math.atan2(dx, dy) * (180 / Math.PI);
+              let angleDiff = Math.abs(this.state.playerAngle - enemyAngle) % 360;
+              if (angleDiff > 180) angleDiff = 360 - angleDiff;
+              isHit = angleDiff <= 5;
+            }
+
+            // ファイアボール発射
             if (i === 0 || i % 2 === 1) {
               audioManager.playFireball();
               if (!this.state.fireballEffects) this.state.fireballEffects = [];
-              const fbTargetX = this.state.playerX + fbDirX * 400;
-              const fbTargetY = this.state.playerY + fbDirY * 400;
               this.state.fireballEffects.push({
                 x: this.toCanvasX(this.state.playerX),
                 y: this.toCanvasY(this.state.playerY),

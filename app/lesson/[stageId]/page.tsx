@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
 import { CanvasEngine, GameState, audioManager } from "@/lib/canvas-engine";
@@ -70,9 +70,29 @@ function StoryWithRuby({ stageId, story }: { stageId: string; story: string }) {
   return rubyMap[stageId] ? <span>{rubyMap[stageId]}</span> : <span>{story}</span>;
 }
 
+const ENEMY_LABELS: Record<string, string> = {
+  slime: "スライム",
+  orc: "オーク",
+  bat: "コウモリ",
+};
+
 export default function StagePage({ params }: PageProps) {
   const router = useRouter();
   const stageConfig = getStage(params.stageId);
+
+  // stageConfig のスプライト（主人公以外）から point_to_target の候補を自動生成
+  const pointToTargets = useMemo((): [string, string][] => {
+    if (!stageConfig) return [];
+    return [
+      ...(stageConfig.enemyType !== "none"
+        ? [[ENEMY_LABELS[stageConfig.enemyType] ?? stageConfig.enemyType, stageConfig.enemyType] as [string, string]]
+        : []),
+      ...stageConfig.attackPoints.map((_, i): [string, string] => [`まほうじん${i + 1}`, `circle${i + 1}`]),
+      ...stageConfig.coins
+        .map((c, i): [string, string] | null => c.label ? [c.label, `coin${i}`] : null)
+        .filter((x): x is [string, string] => x !== null),
+    ];
+  }, [stageConfig]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<CanvasEngine | null>(null);
@@ -576,6 +596,7 @@ export default function StagePage({ params }: PageProps) {
                 stageBlocks={stageConfig.blocklyBlocks}
                 allowWait={stageConfig.allowWait}
                 defaultWaitSec={stageConfig.defaultWaitSec}
+                pointToTargets={pointToTargets}
               />
             </div>
           </div>
