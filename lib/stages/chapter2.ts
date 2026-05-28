@@ -57,7 +57,7 @@ export const chapter2Stages: Record<string, StageConfig> = {
     goal: "point_to_target ブロックの便利さを体験（ただしwaitは手動）",
     timeLimit: 0,
     enemyType: "slime", enemyHP: 3,
-    enemyX: 120, enemyY: -100,
+    enemyX: 120, enemyY: -90,
     attackPoints: [{ id: 1, x: -150, y: -150, radius: 45 }],
     coins: [{ x: 100, y: 100, hidden: true }],
     enemySpeed: 0,
