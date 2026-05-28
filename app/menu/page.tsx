@@ -177,7 +177,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main style={{
+    <main suppressHydrationWarning style={{
       minHeight: "100vh",
       background: "url('/sprites/menu_bg.jpg') center center / cover no-repeat fixed",
       position: "relative", overflow: "hidden",
@@ -203,6 +203,25 @@ export default function Home() {
       <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 3, background: "linear-gradient(to bottom, transparent, rgba(59,130,246,0.5) 30%, rgba(168,85,247,0.5) 70%, transparent)", zIndex: 1 }} />
 
       <div style={{ position: "relative", zIndex: 2, maxWidth: 820, margin: "0 auto", padding: "0 20px 60px" }}>
+
+        {/* モード選択に戻るボタン */}
+        <div style={{ paddingTop: 16, paddingBottom: 0 }}>
+          <button
+            onClick={() => router.push("/")}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              background: "rgba(2,6,20,0.7)", backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10,
+              color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 600,
+              padding: "6px 14px", cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#fff"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.3)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.55)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)"; }}
+          >
+            ← モード選択にもどる
+          </button>
+        </div>
 
         {/* ── ヒーロー ── */}
         <div style={{ textAlign: "center", paddingTop: 48, paddingBottom: 32 }}>

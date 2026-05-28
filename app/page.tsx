@@ -7,7 +7,7 @@ export default function ModeSelect() {
   const router = useRouter();
 
   return (
-    <main style={{
+    <main suppressHydrationWarning style={{
       minHeight: "100vh",
       background: "url('/sprites/menu_bg.jpg') center center / cover no-repeat fixed",
       display: "flex", flexDirection: "column",
@@ -57,12 +57,10 @@ export default function ModeSelect() {
         }}>
 
           {/* プログラミング */}
-          <button
+          <div
             className="mode-btn"
             onClick={() => router.push("/menu")}
             style={{
-              background: "none",
-              border: "none",
               borderRadius: 16, padding: 0,
               cursor: "pointer", overflow: "hidden",
               position: "relative",
@@ -74,26 +72,21 @@ export default function ModeSelect() {
               alt="プログラミング"
               style={{ width: "100%", display: "block", borderRadius: 16 }}
             />
-            {/* ホバーグロー */}
-            <div style={{
-              position: "absolute", inset: 0, borderRadius: 16,
-              background: "rgba(59,130,246,0)",
-              border: "2px solid transparent",
-              transition: "all 0.2s",
-            }} className="mode-overlay" />
-          </button>
+          </div>
 
           {/* タイピング */}
-          <button
+          <a
+            href="https://typing.playgram.jp/select"
+            target="_blank"
+            rel="noopener noreferrer"
             className="mode-btn"
-            onClick={() => window.open("https://typing.playgram.jp/select", "_blank")}
             style={{
-              background: "none",
-              border: "none",
               borderRadius: 16, padding: 0,
               cursor: "pointer", overflow: "hidden",
               position: "relative",
               boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+              display: "block",
+              textDecoration: "none",
             }}
           >
             <img
@@ -101,13 +94,7 @@ export default function ModeSelect() {
               alt="タイピング"
               style={{ width: "100%", display: "block", borderRadius: 16 }}
             />
-            <div style={{
-              position: "absolute", inset: 0, borderRadius: 16,
-              background: "rgba(16,185,129,0)",
-              border: "2px solid transparent",
-              transition: "all 0.2s",
-            }} className="mode-overlay" />
-          </button>
+          </a>
         </div>
 
         <p style={{ color: "rgba(255,255,255,0.15)", fontSize: 10, marginTop: 40, letterSpacing: "0.15em" }}>

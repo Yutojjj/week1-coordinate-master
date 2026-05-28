@@ -417,7 +417,7 @@ export default function StagePage({ params }: PageProps) {
 
         {/* もどるボタン */}
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/menu")}
           style={{ display: "flex", alignItems: "center", gap: "4px", color: "rgba(255,220,140,0.7)", fontSize: "13px", background: "none", border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: "6px", transition: "all 0.15s", zIndex: 1 }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,220,140,0.12)"; (e.currentTarget as HTMLButtonElement).style.color = "#F5EDCC"; }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "none"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,220,140,0.7)"; }}
