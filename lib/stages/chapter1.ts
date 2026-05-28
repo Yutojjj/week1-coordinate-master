@@ -76,7 +76,7 @@ export const chapter1Stages: Record<string, StageConfig> = {
     story: "コインのまえにコウモリがいるぞ！赤丸（まほうじん）のうえで「まつ」ブロックをつかって3びょうかんエネルギーをチャージし、コウモリをたおそう！",
     goal: "特定の場所に移動し、指定時間待機（wait）することでギミックを作動させる",
     timeLimit: 0,
-    enemyType: "bat", enemyHP: 12, 
+    enemyType: "bat", enemyHP: 30, 
     enemyX: 100, enemyY: -100, 
     attackPoints: [
       { id: 1, x: 0, y: -100, radius: 45 }
@@ -95,7 +95,7 @@ export const chapter1Stages: Record<string, StageConfig> = {
   "1-2-2": {
     chapter: 1, stage: 2, area: 2,
     title: "⚡ 魔法使いの試練！カミナリをかわせ！",
-    story: "オークの魔法でカミナリが交互に落ちるぞ！「まつ」と「くりかえし」を使って効率よく進もう！",
+    story: "オークの魔法でカミナリが交互に落ちるぞ！「まつ」を使って効率よく進もう！",
     goal: "待機と移動、繰り返しの組み合わせ",
     timeLimit: 40, 
     enemyType: "orc", enemyHP: 15, enemyX: 0, enemyY: 100,
