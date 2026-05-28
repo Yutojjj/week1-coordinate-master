@@ -594,7 +594,8 @@ export class CanvasEngine {
     // ── 攻撃ポイント（魔法陣） ──────────────────────────────────────────
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
     const rScale = W / 400;
-    for (const [index, ap] of state.attackPoints.entries()) {
+    for (let index = 0; index < state.attackPoints.length; index++) {
+      const ap = state.attackPoints[index];
       if (ap.hit) continue;
       const apx = this.toCanvasX(ap.x), apy = this.toCanvasY(ap.y);
       const r = ap.radius * rScale;
