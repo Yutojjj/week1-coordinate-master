@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 function R({ children, ruby }: { children: string; ruby: string }) {
@@ -100,22 +100,35 @@ const CHAPTERS = [
     ],
   },
   {
-    chapter: 2, comingSoon: true,
-    titleNode: <><R ruby="む">向</R>きとくりかえしを<R ruby="おぼ">覚</R>えよう！</>,
+    chapter: 2, comingSoon: false,
+    titleNode: <><R ruby="む">向</R>きと<R ruby="ちょっかん">直感</R>を<R ruby="おぼ">覚</R>えよう！</>,
     color: "#A855F7",
     glowColor: "rgba(168,85,247,0.5)",
     borderColor: "rgba(168,85,247,0.6)",
     stages: [
       {
         stageNum: 1,
-        titleNode: <><R ruby="とうばつ">討伐</R>スライム</>,
-        desc: <>むきをかえてすすむ</>,
-        icon: "💧",
+        titleNode: <>〇<R ruby="ど">度</R>にむけるブロック</>,
+        desc: <><R ruby="かくど">角度</R>で<R ruby="む">向</R>きをかえる</>,
+        icon: "🧭",
         color: "#A855F7",
-        badge: <>むき</>,
+        badge: <>〇どにむける</>,
         areas: [
-          { id: "2-1-1", area: 1, title: <>スライムをたおせ！</>, icon: "💧", boss: false },
-          { id: "2-1-2", area: 2, title: <>にげたスライムをおえ！</>, icon: "💧", boss: false },
+          { id: "2-1-1", area: 1, title: <>スライムをたおせ！</>, icon: "slime", boss: false },
+          { id: "2-1-2", area: 2, title: <><R ruby="まほうじん">魔法陣</R>からこうげき！</>, icon: "magic", boss: false },
+        ],
+      },
+      {
+        stageNum: 2,
+        titleNode: <>〇へむけるブロック</>,
+        desc: <><ruby>自動<rt style={{ fontSize: "0.55em" }}>じどう</rt></ruby><ruby>照準<rt style={{ fontSize: "0.55em" }}>しょうじゅん</rt></ruby>を<R ruby="つか">使</R>う</>,
+        icon: "🎯",
+        color: "#EC4899",
+        badge: <>〇へむける</>,
+        areas: [
+          { id: "2-2-1", area: 1, title: <>〇へむけてこうげき！</>, icon: "🎯", boss: false },
+          { id: "2-2-2", area: 2, title: <><R ruby="ふしょう">負傷</R>した<R ruby="むらびと">村民</R>を<R ruby="すく">救</R>え！</>, icon: "potion", boss: false },
+          { id: "2-2-3", area: 3, title: <><R ruby="まほうじん">魔法陣</R>の<R ruby="こうぼう">攻防</R>！</>, icon: "orc", boss: true },
         ],
       },
     ],
@@ -157,16 +170,19 @@ function AreaIcon({ icon }: { icon: string }) {
   if (icon === "orc") return <OrcIcon size={30} />;
   if (icon === "player") return <img src="/sprites/player_front.png" alt="キャラ" style={{ width: 30, height: 30, imageRendering: "pixelated" }} />;
   if (icon === "magic") return <img src="/sprites/magic_circle.png" alt="魔法陣" style={{ width: 30, height: 30, imageRendering: "pixelated", borderRadius: "50%" }} />;
+  if (icon === "potion") return <img src="/sprites/potion.png" alt="ポーション" style={{ width: 30, height: 30, imageRendering: "pixelated" }} />;
+  if (icon === "slime") return <img src="/sprites/enemy_slime.png" alt="スライム" style={{ width: 30, height: 30, imageRendering: "pixelated" }} />;
   return <span style={{ fontSize: "22px", lineHeight: 1 }}>{icon}</span>;
 }
 
-export default function Home() {
+export default function MenuPage() {
   const router = useRouter();
-  const [bgmStarted, setBgmStarted] = React.useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [bgmStarted, setBgmStarted] = useState(false);
   useMenuBgm(bgmStarted);
 
-  // 最初のクリックでBGM開始（オーバーレイなし）
   useEffect(() => {
+    setMounted(true);
     const start = () => { setBgmStarted(true); };
     window.addEventListener("click", start, { once: true });
     window.addEventListener("keydown", start, { once: true });
@@ -175,6 +191,8 @@ export default function Home() {
       window.removeEventListener("keydown", start);
     };
   }, []);
+
+  if (!mounted) return null;
 
   return (
     <main suppressHydrationWarning style={{

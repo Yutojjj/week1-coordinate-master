@@ -134,6 +134,7 @@ export default function StagePage({ params }: PageProps) {
       explosionFrame: 0, explosionX: 0, explosionY: 0, showExplosion: false,
       showCoordLabels: stageConfig.showCoordLabels,
       hideCoinCoords: false,
+      chapter: stageConfig.chapter,
       timeLeft: 0,
     };
 
@@ -230,26 +231,56 @@ export default function StagePage({ params }: PageProps) {
       await new Promise<void>(r => setTimeout(r, 200)); 
     };
 
+    // ★ 第2章：対象物の方向に自動で向く（オートエイム）
+    const pointToTarget = async (target: string) => {
+      if (engine.state.gameOver) return;
+      let tx = 0, ty = 0;
+      if (target === "enemy" || target === "slime" || target === "orc" || target === "bat") {
+        tx = engine.state.enemyX; ty = engine.state.enemyY;
+      } else if (target === "circle1") {
+        tx = engine.state.attackPoints[0]?.x ?? 0; ty = engine.state.attackPoints[0]?.y ?? 0;
+      } else if (target === "circle2") {
+        tx = engine.state.attackPoints[1]?.x ?? 0; ty = engine.state.attackPoints[1]?.y ?? 0;
+      } else if (target.startsWith("coin")) {
+        const idx = parseInt(target.replace("coin", "")) || 0;
+        const coin = engine.state.coins.filter(c => !c.collected)[idx];
+        if (coin) { tx = coin.x; ty = coin.y; }
+      }
+      // Scratch角度系：上=0, 右=90, 下=180, 左=-90
+      const dx = tx - engine.state.playerX;
+      const dy = ty - engine.state.playerY;
+      const angle = Math.atan2(dx, dy) * (180 / Math.PI);
+      engine.state.playerAngle = angle;
+      engine.draw();
+      await new Promise<void>(r => setTimeout(r, 300));
+    };
+
     const moveSteps = async (steps: number) => {
       if (engine.state.gameOver) return;
-      // Scratchの角度(0度が上, 90度が右)を元にXとYの移動量を計算
       const rad = engine.state.playerAngle * (Math.PI / 180);
       const dx = Math.sin(rad) * Number(steps);
       const dy = Math.cos(rad) * Number(steps);
-      // 新しい座標へ移動
-      await movePlayer(engine.state.playerX + dx, engine.state.playerY + dy);
+      const targetX = Math.max(-200, Math.min(200, engine.state.playerX + dx));
+      const targetY = Math.max(-200, Math.min(200, engine.state.playerY + dy));
+      await engine.movePlayer(targetX, targetY);
+      const got = engine.checkCoinCollection();
+      if (got > 0) {
+        const total = engine.state.coins.filter(c => c.collected).length;
+        setCollectedCoins(total);
+        setMessage(`🪙 コインをゲット！ (${total}/${engine.state.coins.length})`);
+      }
     };
 
     try {
       const fn = new Function(
         // ★ 第2章の関数も渡す
-        "movePlayer", "wait", "checkEnemyAlive", "pointInDirection", "moveSteps",
+        "movePlayer", "wait", "checkEnemyAlive", "pointInDirection", "moveSteps", "pointToTarget",
         `"use strict";
          let playerX = ${engine.state.playerX};
          let playerY = ${engine.state.playerY};
          return (async () => { ${code.replace("__NO_EVENT_BLOCK__\n", "")} })()`
       );
-      await fn(movePlayer, wait, checkEnemyAlive, pointInDirection, moveSteps);
+      await fn(movePlayer, wait, checkEnemyAlive, pointInDirection, moveSteps, pointToTarget);
     } catch (e: any) {
       if (e.message === "TRAP_HIT") {
         engine.state.gameOver = true;

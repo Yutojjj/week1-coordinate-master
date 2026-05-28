@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
 
 export default function ModeSelect() {
-  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
 
   return (
     <main suppressHydrationWarning style={{
@@ -24,8 +25,8 @@ export default function ModeSelect() {
         .mode-btn:hover { transform: translateY(-6px) scale(1.03) !important; }
       `}</style>
 
-      {/* 暗幕 */}
-      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,10,0.55)", zIndex: 0 }} />
+      {/* 暗幕（クリックを邪魔しないように pointerEvents: "none" を追加） */}
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,10,0.55)", zIndex: 0, pointerEvents: "none" }} />
 
       <div style={{ position: "relative", zIndex: 1, textAlign: "center", padding: "0 24px", width: "100%", maxWidth: 700 }}>
 
@@ -56,15 +57,16 @@ export default function ModeSelect() {
           animation: "fadeUp 0.6s ease 0.2s both",
         }}>
 
-          {/* プログラミング */}
+          {/* プログラミング（window.location.hrefで強制遷移） */}
           <div
             className="mode-btn"
-            onClick={() => router.push("/menu")}
+            onClick={() => { window.location.href = "/menu"; }}
             style={{
               borderRadius: 16, padding: 0,
               cursor: "pointer", overflow: "hidden",
               position: "relative",
               boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+              display: "block",
             }}
           >
             <img

@@ -1,4 +1,4 @@
-const CACHE_NAME = "coord-master-v1";
+const CACHE_NAME = "coord-master-v3";
 const STATIC_ASSETS = [
   "/",
   "/menu",

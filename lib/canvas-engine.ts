@@ -216,7 +216,7 @@ export interface GameState {
   enemyHP: number;
   enemyMaxHP: number;
   enemyType: string; 
-  coins: { x: number; y: number; collected: boolean; hidden?: boolean }[];
+  coins: { x: number; y: number; collected: boolean; hidden?: boolean; sprite?: string; label?: string }[];
   attackPoints: { id: number; x: number; y: number; radius: number; hit: boolean }[];
   traps: { id: number; x: number; y: number; radius: number; type: string; activePhase: number; inactivePhase: number; offset: number; }[];
   gameOver: boolean;
@@ -232,7 +232,8 @@ export interface GameState {
   timeLeft: number;
   coinFloatEffects: { x: number; y: number; alpha: number; vy: number }[];
   lightningStrike: { progress: number; x: number } | null;
-  hideCoinCoords: boolean; // コイン座標を非表示にするフラグ
+  hideCoinCoords: boolean;
+  chapter: number; // 章番号（背景切り替えに使用）
 }
 
 export class CanvasEngine {
@@ -286,6 +287,9 @@ export class CanvasEngine {
     const v = "?v=" + Date.now(); 
     const list: [string, string][] = [
       ["player",       "/sprites/player_front.png" + v],
+      ["player_front", "/sprites/player_front.png" + v],
+      ["potion",       "/sprites/potion.png" + v],
+      ["hushou",       "/sprites/hushou.png" + v],
       ["player_cast",  "/sprites/player_cast.png" + v],
       ["player_hurt",  "/sprites/player_hurt.png" + v],
       ["orc_hurt",     "/sprites/orc_hurt.png" + v],
@@ -316,9 +320,15 @@ export class CanvasEngine {
       })),
       new Promise<void>(res => {
         const img = new Image();
-        img.onload = () => { this.bgImage = img; res(); };
+        img.onload = () => { this.sprites.set("bg_field", img); res(); };
         img.onerror = () => res();
         img.src = "/sprites/bg_field.png";
+      }),
+      new Promise<void>(res => {
+        const img = new Image();
+        img.onload = () => { this.sprites.set("bg_grassland", img); res(); };
+        img.onerror = () => res();
+        img.src = "/sprites/bg_grassland.png";
       }),
     ]);
     this.spritesLoaded = true;
@@ -345,8 +355,10 @@ export class CanvasEngine {
     const cy = this.toCanvasY(0);
 
     // ── 背景 ──────────────────────────────────────────
-    if (this.bgImage) {
-      ctx.drawImage(this.bgImage, 0, 0, W, H);
+    const bgKey = state.chapter >= 2 ? "bg_grassland" : "bg_field";
+    const bgImg = this.sprites.get(bgKey) || this.bgImage;
+    if (bgImg) {
+      ctx.drawImage(bgImg, 0, 0, W, H);
     } else {
       ctx.fillStyle = "#5a8a3c";
       ctx.fillRect(0, 0, W, H);
@@ -550,14 +562,24 @@ export class CanvasEngine {
     // ── コイン ──────────────────────────────────────────
     const coinImg = this.sprites.get(`coin${(this.coinFrame % 4) + 1}`);
     const coinSize = Math.round(W * 0.055);
-    for (const coin of state.coins) {
+    for (let ci = 0; ci < state.coins.length; ci++) {
+      const coin = state.coins[ci];
       if (coin.collected || coin.hidden) continue;
       const px = this.toCanvasX(coin.x), py = this.toCanvasY(coin.y);
-      if (coinImg) {
-        ctx.drawImage(coinImg, px - coinSize/2, py - coinSize/2, coinSize, coinSize);
+
+      // ポーション・村民画像（coin.spriteが設定されている場合）
+      const customImg = coin.sprite ? this.sprites.get(coin.sprite) : null;
+      const drawImg = customImg || coinImg;
+      // 村民は大きめに表示
+      const displaySize = coin.sprite === "hushou" ? Math.round(W * 0.10) : coinSize;
+
+      // ラベル表示なし、画像のみ
+      if (drawImg && drawImg.complete && drawImg.naturalWidth > 0) {
+        ctx.drawImage(drawImg, px - displaySize/2, py - displaySize/2, displaySize, displaySize);
       } else {
-        ctx.fillStyle = "#FFD600"; ctx.beginPath(); ctx.arc(px, py, coinSize/2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#FFD600"; ctx.beginPath(); ctx.arc(px, py, displaySize/2, 0, Math.PI * 2); ctx.fill();
       }
+
       if (state.showCoordLabels && !state.hideCoinCoords) {
         const lw = 54, lh = 14;
         ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(px - lw/2, py + coinSize/2 + 2, lw, lh);
@@ -572,7 +594,7 @@ export class CanvasEngine {
     // ── 攻撃ポイント（魔法陣） ──────────────────────────────────────────
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
     const rScale = W / 400;
-    for (const ap of state.attackPoints) {
+    for (const [index, ap] of state.attackPoints.entries()) {
       if (ap.hit) continue;
       const apx = this.toCanvasX(ap.x), apy = this.toCanvasY(ap.y);
       const r = ap.radius * rScale;
@@ -592,6 +614,18 @@ export class CanvasEngine {
         ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(apx, apy, r, 0, Math.PI * 2); ctx.stroke();
         ctx.fillStyle = `rgba(180,100,255,${0.15 + 0.1 * pulse})`;
         ctx.beginPath(); ctx.arc(apx, apy, r, 0, Math.PI * 2); ctx.fill();
+
+        // 魔法陣番号ラベル（複数ある場合）
+        if (state.attackPoints.length >= 2) {
+          const label = `まほうじん${index + 1}`;
+          ctx.font = `bold ${Math.round(r * 0.38)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillStyle = "rgba(0,0,0,0.65)";
+          ctx.fillText(label, apx, apy - r - 6 + 2);
+          ctx.fillStyle = "rgba(220,180,255,0.95)";
+          ctx.fillText(label, apx, apy - r - 6);
+          ctx.textAlign = "left";
+        }
       }
       if (state.showCoordLabels) {
         ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(apx - 27, apy + r + 2, 54, 14);
@@ -709,7 +743,7 @@ export class CanvasEngine {
       else spriteName = "player_back";
     }
 
-    const pImg = this.sprites.get(spriteName) || this.sprites.get("player_front");
+    const pImg = this.sprites.get(spriteName) || this.sprites.get("player") || this.sprites.get("player_front");
 
     // 歩行アニメ：移動中は上下バウンス
     const walkBob = this.isWalking && !state.gameOver
@@ -1028,29 +1062,52 @@ export class CanvasEngine {
       if (this.state.enemyHP > 0 && this.state.enemyType !== "none") {
         for (const ap of this.state.attackPoints) {
           if (!ap.hit && Math.hypot(this.state.playerX - ap.x, this.state.playerY - ap.y) <= ap.radius) {
-            // 継続ダメージ：毎ステップ(100ms)ごとに0.4ずつ累積し、整数部分をHPから削る
-            this.state.damageAccum = (this.state.damageAccum || 0) + 0.4;
-            const dmg = Math.floor(this.state.damageAccum);
-            if (dmg >= 1) {
-              this.state.damageAccum -= dmg;
-              this.state.enemyHP = Math.max(0, this.state.enemyHP - dmg);
-              this.state.damageEffects.push({
-                x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: `-${dmg} 💥`, alpha: 1,
-              });
-            }
-            // ファイアボールの発射間隔：最初のステップで即発射、以降0.2秒ごと
+
+            // ── ファイアボールが敵に当たるか角度で判定 ──
+            const dx = this.state.enemyX - this.state.playerX;
+            const dy = this.state.enemyY - this.state.playerY;
+            // playerAngle から計算した方向ベクトル（Scratch系: 上=0, 右=90）
+            const rad = this.state.playerAngle * (Math.PI / 180);
+            const fbDirX = Math.sin(rad);
+            const fbDirY = Math.cos(rad);
+            // 敵方向の角度とファイアボール方向の角度の差
+            const enemyAngle = Math.atan2(dx, dy) * (180 / Math.PI);
+            let angleDiff = Math.abs(this.state.playerAngle - enemyAngle) % 360;
+            if (angleDiff > 180) angleDiff = 360 - angleDiff;
+            const HIT_THRESHOLD = 5; // ±5度以内なら命中
+            const isHit = angleDiff <= HIT_THRESHOLD;
+
+            // ファイアボール発射（常に角度方向へ）
             if (i === 0 || i % 2 === 1) {
               audioManager.playFireball();
-              audioManager.playHit();
               if (!this.state.fireballEffects) this.state.fireballEffects = [];
+              const fbTargetX = this.state.playerX + fbDirX * 400;
+              const fbTargetY = this.state.playerY + fbDirY * 400;
               this.state.fireballEffects.push({
                 x: this.toCanvasX(this.state.playerX),
                 y: this.toCanvasY(this.state.playerY),
-                tx: this.toCanvasX(this.state.enemyX),
-                ty: this.toCanvasY(this.state.enemyY),
+                tx: this.toCanvasX(fbTargetX),
+                ty: this.toCanvasY(fbTargetY),
                 progress: 0,
                 id: Date.now() + Math.random(),
               });
+            }
+
+            // ダメージは命中時のみ
+            if (isHit) {
+              audioManager.playHit();
+              this.state.damageAccum = (this.state.damageAccum || 0) + 0.4;
+              const dmg = Math.floor(this.state.damageAccum);
+              if (dmg >= 1) {
+                this.state.damageAccum -= dmg;
+                this.state.enemyHP = Math.max(0, this.state.enemyHP - dmg);
+                this.state.damageEffects.push({
+                  x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: `-${dmg} 💥`, alpha: 1,
+                });
+              }
+            } else {
+              // 外れた場合はダメージリセットのみ
+              this.state.damageAccum = 0;
             }
             if (this.state.enemyHP === 0) {
               ap.hit = true;

@@ -32,7 +32,7 @@ export interface StageConfig {
   enemyX: number;
   enemyY: number;
   attackPoints: AttackPoint[];
-  coins: Array<{ x: number; y: number; hidden?: boolean }>;
+  coins: Array<{ x: number; y: number; hidden?: boolean; sprite?: string; label?: string }>;
   enemySpeed: number;
   blocklyBlocks: string[];
   allowWait: boolean;
