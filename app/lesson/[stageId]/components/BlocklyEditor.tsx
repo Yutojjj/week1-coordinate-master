@@ -28,12 +28,16 @@ export default function BlocklyEditor({
 
       // ── ブロック定義 ──────────────────────────
 
+      // カラーラベルヘルパー（X=赤, Y=青）
+      const xLabel = () => new Blockly.FieldLabel("Ｘを", "blockly-label-x");
+      const yLabel = () => new Blockly.FieldLabel("Ｙを", "blockly-label-y");
+
       Blockly.Blocks["move_xy"] = {
         init: function () {
           this.appendDummyInput()
-            .appendField("Ｘを")
+            .appendField(xLabel())
             .appendField(new Blockly.FieldNumber(0, -200, 200), "VX")
-            .appendField("Ｙを")
+            .appendField(yLabel())
             .appendField(new Blockly.FieldNumber(0, -200, 200), "VY")
             .appendField("にうごく");
           this.setPreviousStatement(true, null);
@@ -46,7 +50,7 @@ export default function BlocklyEditor({
       Blockly.Blocks["move_x"] = {
         init: function () {
           this.appendDummyInput()
-            .appendField("Ｘを")
+            .appendField(xLabel())
             .appendField(new Blockly.FieldNumber(0, -200, 200), "VALUE")
             .appendField("にうごく");
           this.setPreviousStatement(true, null);
@@ -59,7 +63,7 @@ export default function BlocklyEditor({
       Blockly.Blocks["move_y"] = {
         init: function () {
           this.appendDummyInput()
-            .appendField("Ｙを")
+            .appendField(yLabel())
             .appendField(new Blockly.FieldNumber(0, -200, 200), "VALUE")
             .appendField("にうごく");
           this.setPreviousStatement(true, null);
@@ -72,7 +76,7 @@ export default function BlocklyEditor({
       Blockly.Blocks["move_dx"] = {
         init: function () {
           this.appendDummyInput()
-            .appendField("Ｘを")
+            .appendField(xLabel())
             .appendField(new Blockly.FieldNumber(50, -200, 200), "VALUE")
             .appendField("ずつかえる");
           this.setPreviousStatement(true, null);
@@ -85,7 +89,7 @@ export default function BlocklyEditor({
       Blockly.Blocks["move_dy"] = {
         init: function () {
           this.appendDummyInput()
-            .appendField("Ｙを")
+            .appendField(yLabel())
             .appendField(new Blockly.FieldNumber(50, -200, 200), "VALUE")
             .appendField("ずつかえる");
           this.setPreviousStatement(true, null);
@@ -207,7 +211,7 @@ export default function BlocklyEditor({
         toolbox,
         scrollbars: true,
         trashcan: true,
-        zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 2, minScale: 0.4 },
+        zoom: { controls: true, wheel: true, startScale: 0.75, maxScale: 2, minScale: 0.4 },
         grid: { spacing: 20, length: 3, colour: "#555", snap: true },
         renderer: "zelos",
       });
@@ -215,8 +219,27 @@ export default function BlocklyEditor({
       workspaceRef.current = ws;
 
       ws.addChangeListener(() => {
-        const code = javascriptGenerator.workspaceToCode(ws);
-        onCodeChange?.(code);
+        // on_runブロックにつながっているブロックのみコードを生成
+        const allBlocks = ws.getAllBlocks(false);
+        const onRunBlock = allBlocks.find((b: any) => b.type === "on_run");
+        const hasOnRun = !!onRunBlock;
+
+        let code = "";
+        if (onRunBlock) {
+          // on_runの子ブロック（DOステートメント）だけをコード化
+          const body = javascriptGenerator.statementToCode(onRunBlock, "DO") ||
+                       javascriptGenerator.statementToCode(onRunBlock, "NEXT") || "";
+          // next接続されているブロックを順にコード化
+          let next = onRunBlock.getNextBlock?.();
+          let nextCode = "";
+          while (next) {
+            nextCode += javascriptGenerator.blockToCode(next) || "";
+            next = next.getNextBlock?.();
+          }
+          code = body + nextCode;
+        }
+
+        onCodeChange?.(hasOnRun ? code : `__NO_EVENT_BLOCK__\n${code}`);
       });
     };
 
@@ -231,14 +254,20 @@ export default function BlocklyEditor({
   }, [stageBlocks, allowWait, defaultWaitSec]);
 
   return (
-    <div className="flex flex-col gap-2 h-full">
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px", height: "100%" }}>
+      <style>{`
+        .blockly-label-x { fill: #ff6b6b !important; font-weight: bold !important; }
+        .blockly-label-y { fill: #74b9ff !important; font-weight: bold !important; }
+        .blocklyText.blockly-label-x { fill: #ff6b6b !important; }
+        .blocklyText.blockly-label-y { fill: #74b9ff !important; }
+      `}</style>
       <div
         ref={blocklyDiv}
-        style={{ width: "100%", height: "460px", borderRadius: "6px", border: "2px solid #374151" }}
+        style={{ width: "100%", flex: 1, minHeight: 0, borderRadius: "6px", border: "2px solid #e5e7eb" }}
       />
       <button
         onClick={() => workspaceRef.current?.clear()}
-        className="bg-slate-600 hover:bg-slate-500 text-white text-sm font-bold py-1 px-4 rounded self-end"
+        style={{ alignSelf: "flex-end", background: "#f3f4f6", border: "1px solid #e5e7eb", borderRadius: "6px", padding: "4px 12px", fontSize: "12px", color: "#6b7280", cursor: "pointer" }}
       >
         🗑️ クリア
       </button>

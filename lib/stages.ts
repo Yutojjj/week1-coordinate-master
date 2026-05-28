@@ -40,6 +40,7 @@ export interface StageConfig {
   defaultWaitSec: number;
   nextStageId: string | null;
   traps: Trap[];
+  showHintButton?: boolean;
 }
 
 // ★ 章ごとのステージデータを統合

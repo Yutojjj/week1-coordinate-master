@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-// ★ エラー解消：相対パス(./)ではなく、絶対パス(@/app/)を使います
-import "@/app/globals.css";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "座標マスター - ケーニーズプログラミング教室",
@@ -14,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ja">
-      <body className="bg-slate-900 text-white">
+      <body style={{ margin: 0, padding: 0 }}>
         {children}
       </body>
     </html>

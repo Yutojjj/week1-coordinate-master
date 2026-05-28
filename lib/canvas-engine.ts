@@ -4,10 +4,87 @@ export class AudioManager {
   private bgmNodes: AudioNode[] = [];
   private bgmGain: GainNode | null = null;
   private isBgmPlaying = false;
+  private bgmMode: "none" | "ambient" | "battle" | "boss" = "none";
+  private bossAudio: HTMLAudioElement | null = null;
 
   private getCtx(): AudioContext {
     if (!this.ctx) this.ctx = new AudioContext();
     return this.ctx;
+  }
+
+  private stopCurrentBgm() {
+    this.isBgmPlaying = false;
+    try {
+      if (this.bgmGain) {
+        this.bgmGain.gain.exponentialRampToValueAtTime(0.001, this.getCtx().currentTime + 0.4);
+      }
+    } catch {}
+    // ボスBGM（HTML Audio）を停止
+    if (this.bossAudio) {
+      this.bossAudio.pause();
+      this.bossAudio.currentTime = 0;
+      this.bossAudio = null;
+    }
+    this.bgmGain = null;
+    this.bgmMode = "none";
+  }
+
+  // ボスBGM（MP3使用）
+  startBossBgm() {
+    if (this.bgmMode === "boss") return;
+    this.stopCurrentBgm();
+    try {
+      const audio = new Audio("/bgm/Banners_at_the_Gate.mp3");
+      audio.loop = true;
+      audio.volume = 0.45;
+      audio.play().catch(() => {});
+      this.bossAudio = audio;
+      this.bgmMode = "boss";
+      this.isBgmPlaying = true;
+    } catch {}
+  }
+
+  // 待機中BGM（MP3使用）
+  startAmbientBgm() {
+    if (this.bgmMode === "ambient") return;
+    this.stopCurrentBgm();
+    try {
+      const audio = new Audio("/bgm/Sunlit_Meadow_Path.mp3");
+      audio.loop = true;
+      audio.volume = 0.4;
+      audio.play().catch(() => {});
+      this.bossAudio = audio; // 同じフィールドで管理
+      this.bgmMode = "ambient";
+      this.isBgmPlaying = true;
+    } catch {}
+  }
+
+  playCoinSe() {
+    try {
+      const audio = new Audio("/bgm/コイン_チャリーン_.mp3");
+      audio.volume = 0.6;
+      audio.play().catch(() => {});
+    } catch {}
+  }
+
+  playWalkSe() {
+    try {
+      const ctx = new AudioContext();
+      // コトッという足音
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.12, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+      g.connect(ctx.destination);
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) {
+        d[i] = (Math.random() * 2 - 1) * Math.exp(-i / d.length * 12) * 0.6;
+      }
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(g);
+      src.start();
+    } catch {}
   }
 
   playFireball() {
@@ -53,17 +130,20 @@ export class AudioManager {
   }
 
   startBattleBgm() {
-    if (this.isBgmPlaying) return;
+    if (this.bgmMode === "battle") return;
+    this.stopCurrentBgm();
     try {
       const ctx = this.getCtx();
+      if (ctx.state === "suspended") ctx.resume();
       this.bgmGain = ctx.createGain();
       this.bgmGain.gain.setValueAtTime(0.15, ctx.currentTime);
       this.bgmGain.connect(ctx.destination);
       this.isBgmPlaying = true;
+      this.bgmMode = "battle";
       const bpm = 140;
       const beat = 60 / bpm;
       const playDrum = (time: number) => {
-        if (!this.isBgmPlaying) return;
+        if (!this.isBgmPlaying || this.bgmMode !== "battle") return;
         const kick = [0, 2, 4, 6];
         const snare = [2, 6];
         for (let measure = 0; measure < 2; measure++) {
@@ -113,12 +193,14 @@ export class AudioManager {
   }
 
   stopBgm() {
-    this.isBgmPlaying = false;
-    try {
-      if (this.bgmGain) {
-        this.bgmGain.gain.exponentialRampToValueAtTime(0.001, this.getCtx().currentTime + 0.5);
-      }
-    } catch {}
+    this.stopCurrentBgm();
+    // バトル・ボス終了後はアンビエントに戻す
+    setTimeout(() => this.startAmbientBgm(), 600);
+  }
+
+  // ページ離脱時など完全停止（アンビエント再起動なし）
+  stopAll() {
+    this.stopCurrentBgm();
   }
 }
 
@@ -139,6 +221,7 @@ export interface GameState {
   traps: { id: number; x: number; y: number; radius: number; type: string; activePhase: number; inactivePhase: number; offset: number; }[];
   gameOver: boolean;
   gameWon: boolean;
+  damageAccum: number;
   damageEffects: { x: number; y: number; text: string; alpha: number }[];
   fireballEffects: { x: number; y: number; tx: number; ty: number; progress: number; id: number }[];
   explosionFrame: number;
@@ -147,6 +230,9 @@ export interface GameState {
   showExplosion: boolean;
   showCoordLabels: boolean;
   timeLeft: number;
+  coinFloatEffects: { x: number; y: number; alpha: number; vy: number }[];
+  lightningStrike: { progress: number; x: number } | null;
+  hideCoinCoords: boolean; // コイン座標を非表示にするフラグ
 }
 
 export class CanvasEngine {
@@ -158,6 +244,9 @@ export class CanvasEngine {
   private coinFrame = 0;
   private coinFrameTimer = 0;
   spritesLoaded = false;
+  private walkFrame = 0;       // 歩行アニメフレーム(0〜7)
+  private walkTimer = 0;       // フレーム進行タイマー
+  private isWalking = false;   // 移動中フラグ
   
   startTime: number = Date.now();
 
@@ -170,6 +259,20 @@ export class CanvasEngine {
   }
   toCanvasY(ly: number): number {
     return (1 - (ly + 200) / 400) * this.canvas.height;
+  }
+
+  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 
   constructor(canvas: HTMLCanvasElement, initialState: GameState) {
@@ -215,7 +318,7 @@ export class CanvasEngine {
         const img = new Image();
         img.onload = () => { this.bgImage = img; res(); };
         img.onerror = () => res();
-        img.src = "/sprites/bg_grassland.png";
+        img.src = "/sprites/bg_field.png";
       }),
     ]);
     this.spritesLoaded = true;
@@ -249,8 +352,22 @@ export class CanvasEngine {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // ── グリッド ──────────────────────────────────────────
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    // ── グリッド（モダン）──────────────────────────────────────────
+    // サブグリッド（50刻み）
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    for (let lx = -200; lx <= 200; lx += 50) {
+      if (lx % 100 === 0) continue;
+      const px = this.toCanvasX(lx);
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+    }
+    for (let ly = -200; ly <= 200; ly += 50) {
+      if (ly % 100 === 0) continue;
+      const py = this.toCanvasY(ly);
+      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
+    }
+    // メイングリッド（100刻み）
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.lineWidth = 1;
     for (let lx = -200; lx <= 200; lx += 100) {
       const px = this.toCanvasX(lx);
@@ -318,58 +435,107 @@ export class CanvasEngine {
 
         if (isWarning) {
           ctx.save();
-          ctx.font = `bold ${Math.round(r * 0.7)}px Arial`;
+          const countText = `${Math.ceil(timeUntilBolt)}`;
+          const badgeW = 36, badgeH = 24;
+          const bx = px - badgeW / 2;
+          const by = py - r - badgeH - 8; // 魔法陣の上に配置
+
+          // バッジ背景（角丸）
+          ctx.fillStyle = "rgba(0,0,0,0.75)";
+          this.roundRect(ctx, bx - 1, by - 1, badgeW + 2, badgeH + 2, 7);
+          ctx.fill();
+          ctx.fillStyle = isWarning ? "rgba(255,80,0,0.9)" : "rgba(255,200,0,0.9)";
+          this.roundRect(ctx, bx, by, badgeW, badgeH, 6);
+          ctx.fill();
+
+          // ⚡アイコン + 数字
+          ctx.font = "bold 13px Arial";
           ctx.textAlign = "center";
-          ctx.fillStyle = "rgba(0,0,0,0.6)";
-          ctx.fillText(`${Math.ceil(timeUntilBolt)}`, px + 2, py + 6);
-          ctx.fillStyle = "#FFD600";
-          ctx.fillText(`${Math.ceil(timeUntilBolt)}`, px, py + 5);
+          ctx.fillStyle = "#fff";
+          ctx.shadowColor = "rgba(0,0,0,0.8)";
+          ctx.shadowBlur = 3;
+          ctx.fillText(`⚡${countText}`, px, by + badgeH - 6);
+          ctx.shadowBlur = 0;
           ctx.restore();
         }
       }
     }
 
-    // ── 軸とラベル ──────────────────────────────────────────
-    ctx.strokeStyle = "#FF5252"; ctx.lineWidth = 3;
+    // ── 軸とラベル（モダン）──────────────────────────────────────────
+    // X軸
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,100,100,0.7)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(W, cy); ctx.stroke();
-    ctx.fillStyle = "#FF5252"; ctx.beginPath(); ctx.moveTo(W - 2, cy);
-    ctx.lineTo(W - 14, cy - 7); ctx.lineTo(W - 14, cy + 7); ctx.closePath(); ctx.fill();
-    ctx.font = "bold 13px Arial"; ctx.textAlign = "right";
-    ctx.fillText("X（よこ）→", W - 16, cy - 6); ctx.textAlign = "left";
-    
+    // X軸矢印
+    ctx.fillStyle = "rgba(255,100,100,0.9)";
+    ctx.beginPath(); ctx.moveTo(W - 4, cy); ctx.lineTo(W - 16, cy - 6); ctx.lineTo(W - 16, cy + 6); ctx.closePath(); ctx.fill();
+    // X軸ラベル
+    ctx.font = "bold 11px 'Arial'"; ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,100,100,0.95)";
+    ctx.fillText("X →", W - 18, cy - 7);
+    ctx.restore();
+
+    // Y軸
+    ctx.save();
+    ctx.strokeStyle = "rgba(100,180,255,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, H); ctx.lineTo(cx, 0); ctx.stroke();
+    // Y軸矢印
+    ctx.fillStyle = "rgba(100,180,255,0.9)";
+    ctx.beginPath(); ctx.moveTo(cx, 4); ctx.lineTo(cx - 6, 16); ctx.lineTo(cx + 6, 16); ctx.closePath(); ctx.fill();
+    // Y軸ラベル
+    ctx.font = "bold 11px 'Arial'"; ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(100,180,255,0.95)";
+    ctx.fillText("Y ↑", cx + 8, 18);
+    ctx.restore();
+
+    // 原点ドット
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
+
     if (state.showCoordLabels) {
+      // X軸の数値ラベル（ピル型バッジ）
       for (let lx = -200; lx <= 200; lx += 100) {
         if (lx === 0) continue;
         const px = this.toCanvasX(lx);
-        ctx.fillStyle = "rgba(255,82,82,0.9)"; ctx.fillRect(px - 16, cy + 5, 32, 15);
+        const label = String(lx);
+        const lw = label.length * 7 + 10;
+        ctx.save();
+        ctx.fillStyle = "rgba(220,60,60,0.82)";
+        this.roundRect(ctx, px - lw/2, cy + 6, lw, 16, 4);
+        ctx.fill();
         ctx.fillStyle = "#fff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center";
-        ctx.fillText(String(lx), px, cy + 17);
+        ctx.fillText(label, px, cy + 18);
+        ctx.restore();
       }
-    }
-
-    ctx.strokeStyle = "#42A5F5"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(cx, H); ctx.lineTo(cx, 0); ctx.stroke();
-    ctx.fillStyle = "#42A5F5"; ctx.beginPath(); ctx.moveTo(cx, 2);
-    ctx.lineTo(cx - 7, 16); ctx.lineTo(cx + 7, 16); ctx.closePath(); ctx.fill();
-    ctx.font = "bold 13px Arial"; ctx.textAlign = "left";
-    ctx.fillText("↑ Y（たて）", cx + 6, 20);
-
-    if (state.showCoordLabels) {
+      // Y軸の数値ラベル（ピル型バッジ）
       for (let ly = -200; ly <= 200; ly += 100) {
         if (ly === 0) continue;
         const py = this.toCanvasY(ly);
-        ctx.fillStyle = "rgba(66,165,245,0.9)"; ctx.fillRect(cx + 5, py - 8, 32, 15);
-        ctx.fillStyle = "#fff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left";
-        ctx.fillText(String(ly), cx + 7, py + 4);
+        const label = String(ly);
+        const lw = label.length * 7 + 10;
+        ctx.save();
+        ctx.fillStyle = "rgba(40,140,230,0.82)";
+        this.roundRect(ctx, cx - lw - 6, py - 8, lw, 16, 4);
+        ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center";
+        ctx.fillText(label, cx - lw/2 - 6, py + 4);
+        ctx.restore();
       }
-    }
-
-    ctx.fillStyle = "white"; ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    if (state.showCoordLabels) {
-      ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(cx + 8, cy - 16, 38, 14);
-      ctx.fillStyle = "#FFD600"; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
-      ctx.fillText("(0,0)", cx + 10, cy - 4);
+      // 原点ラベル
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
+      this.roundRect(ctx, cx + 7, cy - 17, 36, 14, 4);
+      ctx.fill();
+      ctx.fillStyle = "#FFD600"; ctx.font = "bold 10px monospace"; ctx.textAlign = "left";
+      ctx.fillText("(0,0)", cx + 9, cy - 5);
+      ctx.restore();
     }
 
     // ── タイマー ──────────────────────────────────────────
@@ -392,7 +558,7 @@ export class CanvasEngine {
       } else {
         ctx.fillStyle = "#FFD600"; ctx.beginPath(); ctx.arc(px, py, coinSize/2, 0, Math.PI * 2); ctx.fill();
       }
-      if (state.showCoordLabels) {
+      if (state.showCoordLabels && !state.hideCoinCoords) {
         const lw = 54, lh = 14;
         ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(px - lw/2, py + coinSize/2 + 2, lw, lh);
         ctx.fillStyle = "#FF5252"; ctx.font = "bold 9px monospace"; ctx.textAlign = "left";
@@ -487,18 +653,35 @@ export class CanvasEngine {
       }
       ctx.restore();
       
-      const bw = eSize * 1.0, bh = 8;
-      ctx.fillStyle = "#555"; ctx.fillRect(ex - bw/2, ey - eSize/2 - 14, bw, bh);
+      // ── HPバー（モダン）──
+      const bw = eSize * 1.2, bh = 10;
+      const bx = ex - bw / 2, by = ey - eSize / 2 - 18;
       const hpR = Math.max(0, state.enemyHP / state.enemyMaxHP);
-      ctx.fillStyle = hpR > 0.5 ? "#4CAF50" : hpR > 0.25 ? "#FFD600" : "#F44336";
-      ctx.fillRect(ex - bw/2, ey - eSize/2 - 14, bw * hpR, bh);
-      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
-      ctx.strokeRect(ex - bw/2, ey - eSize/2 - 14, bw, bh);
-      
-      if (state.enemyMaxHP < 99) {
-        ctx.fillStyle = "white"; ctx.font = "bold 9px Arial"; ctx.textAlign = "center";
-        ctx.fillText(`HP ${state.enemyHP}/${state.enemyMaxHP}`, ex, ey - eSize/2 - 17);
+      const hpColor = hpR > 0.6 ? "#4ade80" : hpR > 0.3 ? "#facc15" : "#f87171";
+
+      // 背景トラック
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      this.roundRect(ctx, bx - 1, by - 1, bw + 2, bh + 2, 6);
+      ctx.fill();
+
+      // バー本体
+      if (hpR > 0) {
+        ctx.fillStyle = hpColor;
+        ctx.shadowColor = hpColor;
+        ctx.shadowBlur = 6;
+        this.roundRect(ctx, bx, by, bw * hpR, bh, 5);
+        ctx.fill();
+        ctx.shadowBlur = 0;
       }
+
+      // ハート ❤ アイコン（左）
+      ctx.font = "10px Arial"; ctx.textAlign = "right";
+      ctx.fillStyle = hpColor;
+      ctx.shadowColor = hpColor; ctx.shadowBlur = 4;
+      ctx.fillText("♥", bx - 3, by + bh - 1);
+      ctx.shadowBlur = 0;
+      ctx.restore();
       ctx.textAlign = "left";
     }
 
@@ -515,23 +698,52 @@ export class CanvasEngine {
     let spriteName = "player_front";
     const angle = ((state.playerAngle % 360) + 360) % 360;
 
-    if (onAttackPoint) {
+    if (state.gameOver) {
+      spriteName = "player_hurt"; // やられた！
+    } else if (onAttackPoint) {
       spriteName = "player_cast";
     } else {
-      if (angle >= 45 && angle < 135) spriteName = "player_right";       // 90度（右）
-      else if (angle >= 135 && angle < 225) spriteName = "player_front"; // 180度（下）
-      else if (angle >= 225 && angle < 315) spriteName = "player_left";  // 270度（左）
-      else spriteName = "player_back";                                   // 0度（上）
+      if (angle >= 45 && angle < 135) spriteName = "player_right";
+      else if (angle >= 135 && angle < 225) spriteName = "player_front";
+      else if (angle >= 225 && angle < 315) spriteName = "player_left";
+      else spriteName = "player_back";
     }
 
-    const pImg = this.sprites.get(spriteName) || this.sprites.get("player");
-    if (pImg && pImg.complete && pImg.naturalWidth > 0) {
-      ctx.drawImage(pImg, px - pSize/2, py - pSize * 0.65, pSize, pSize);
+    const pImg = this.sprites.get(spriteName) || this.sprites.get("player_front");
+
+    // 歩行アニメ：移動中は上下バウンス
+    const walkBob = this.isWalking && !state.gameOver
+      ? Math.sin(this.walkFrame * Math.PI / 4) * 4
+      : 0;
+
+    // ゲームオーバー時は少し揺らして倒れた演出
+    if (state.gameOver) {
+      ctx.save();
+      ctx.translate(px, py - pSize * 0.15);
+      ctx.rotate(0.4);
+      ctx.globalAlpha = 0.85;
+      if (pImg && pImg.complete && pImg.naturalWidth > 0) {
+        ctx.drawImage(pImg, -pSize/2, -pSize * 0.5, pSize, pSize);
+      }
+      ctx.restore();
     } else {
-      ctx.fillStyle = "#1565C0"; ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(px, py, pSize/2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "white"; ctx.font = `bold ${Math.round(pSize*0.3)}px Arial`;
-      ctx.textAlign = "center"; ctx.fillText("勇", px, py + Math.round(pSize*0.12));
+      if (pImg && pImg.complete && pImg.naturalWidth > 0) {
+        ctx.drawImage(pImg, px - pSize/2, py - pSize * 0.65 + walkBob, pSize, pSize);
+      } else {
+        ctx.fillStyle = "#1565C0"; ctx.strokeStyle = "#FFD600"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(px, py + walkBob, pSize/2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "white"; ctx.font = `bold ${Math.round(pSize*0.3)}px Arial`;
+        ctx.textAlign = "center"; ctx.fillText("勇", px, py + walkBob + Math.round(pSize*0.12));
+      }
+    }
+
+    // 歩行フレーム更新
+    if (this.isWalking && !state.gameOver) {
+      this.walkTimer++;
+      if (this.walkTimer >= 4) {
+        this.walkTimer = 0;
+        this.walkFrame = (this.walkFrame + 1) % 8;
+      }
     }
 
     if (state.showCoordLabels) {
@@ -588,6 +800,22 @@ export class CanvasEngine {
       }
     }
 
+    // ── コイン浮き上がり演出 ──────────────────────────────────────────
+    if (this.state.coinFloatEffects) {
+      for (const ef of this.state.coinFloatEffects) {
+        const coinImg = this.sprites.get(`coin_frame${(this.coinFrame % 4) + 1}`);
+        ctx.save();
+        ctx.globalAlpha = ef.alpha;
+        if (coinImg && coinImg.complete) {
+          ctx.drawImage(coinImg, ef.x - 12, ef.y - 12, 24, 24);
+        } else {
+          ctx.fillStyle = `rgba(255,215,0,${ef.alpha})`;
+          ctx.beginPath(); ctx.arc(ef.x, ef.y, 10, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
     // ── ダメージエフェクト ──────────────────────────────────────────
     for (const eff of state.damageEffects) {
       const ex2 = this.toCanvasX(state.enemyX);
@@ -614,28 +842,75 @@ export class CanvasEngine {
       ctx.restore();
     }
 
+    // ── 負け演出：雷がキャラに落ちる ──────────────────────────────────────────
+    if (state.gameOver && state.lightningStrike) {
+      const ls = state.lightningStrike;
+      const px2 = ls.x;
+      const py2 = this.toCanvasY(this.state.playerY);
+      const strikeY = ls.progress < 0.5
+        ? H * 0.02 + (py2 - H * 0.02) * (ls.progress / 0.5) // 上から落ちてくる
+        : py2; // 着弾後は地面で停止
+
+      // 雷の閃光（白いフラッシュ）
+      if (ls.progress > 0.45 && ls.progress < 0.65) {
+        const flashAlpha = Math.sin((ls.progress - 0.45) / 0.2 * Math.PI) * 0.55;
+        ctx.fillStyle = `rgba(200,220,255,${flashAlpha})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // 雷のジグザグ線
+      const segments = 10;
+      ctx.save();
+      ctx.strokeStyle = `rgba(180,200,255,${Math.max(0, 1 - ls.progress * 1.5)})`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = "#aad4ff";
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.moveTo(px2, H * 0.02);
+      for (let s = 1; s <= segments; s++) {
+        const sy = H * 0.02 + (strikeY - H * 0.02) * (s / segments);
+        const jitter = s === segments ? 0 : (Math.sin(s * 137 + ls.progress * 20) * 14);
+        ctx.lineTo(px2 + jitter, sy);
+      }
+      ctx.stroke();
+      // 太い中心線
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 1 - ls.progress * 1.8)})`;
+      ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.moveTo(px2, H * 0.02);
+      for (let s = 1; s <= segments; s++) {
+        const sy = H * 0.02 + (strikeY - H * 0.02) * (s / segments);
+        const jitter = s === segments ? 0 : (Math.sin(s * 137 + ls.progress * 20) * 14);
+        ctx.lineTo(px2 + jitter, sy);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // 着弾エフェクト（地面の円形閃光）
+      if (ls.progress > 0.45) {
+        const impactAlpha = Math.max(0, 1 - (ls.progress - 0.45) / 0.55);
+        const impactR = (ls.progress - 0.45) / 0.55 * 50;
+        ctx.save();
+        ctx.globalAlpha = impactAlpha * 0.8;
+        const ig = ctx.createRadialGradient(px2, py2, 0, px2, py2, impactR);
+        ig.addColorStop(0, "rgba(255,255,200,1)");
+        ig.addColorStop(0.4, "rgba(150,180,255,0.7)");
+        ig.addColorStop(1, "rgba(100,150,255,0)");
+        ctx.fillStyle = ig;
+        ctx.beginPath(); ctx.arc(px2, py2, impactR, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+
     // ── 終了メッセージ ──────────────────────────────────────────
     if (state.gameOver) {
-      ctx.fillStyle = "rgba(0,0,0,0.75)";
-      ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < H; i += 4) {
-        ctx.fillStyle = "rgba(255,0,0,0.04)";
-        ctx.fillRect(0, i, W, 2);
+      // 雷演出が終わったら軽く暗転だけ（テキストなし）
+      const lsProgress = state.lightningStrike?.progress ?? 99;
+      if (lsProgress > 1.0) {
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillRect(0, 0, W, H);
       }
-      const gof = Math.round(W * 0.09);
-      ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(255,0,0,0.3)";
-      ctx.font = `bold ${gof}px Arial`;
-      ctx.fillText("GAME OVER", W/2 + 3, H/2 + 3);
-      ctx.fillStyle = "#FF1744";
-      ctx.shadowColor = "#FF1744";
-      ctx.shadowBlur = 30;
-      ctx.fillText("GAME OVER", W/2, H/2);
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "rgba(255,255,255,0.7)";
-      ctx.font = `${Math.round(W * 0.033)}px Arial`;
-      ctx.fillText("もういちどためしてみよう！", W/2, H/2 + gof * 0.9);
-      ctx.textAlign = "left";
     }
 
     if (state.gameWon) {
@@ -681,14 +956,21 @@ export class CanvasEngine {
     const STEPS = 25;
     const sx = this.state.playerX, sy = this.state.playerY;
     
+    this.isWalking = true;
+    let seStep = 0;
+
     for (let i = 1; i <= STEPS; i++) {
-      if (this.state.gameOver || this.state.gameWon) return;
+      if (this.state.gameOver || this.state.gameWon) { this.isWalking = false; return; }
       this.state.playerX = sx + (lx - sx) * (i / STEPS);
       this.state.playerY = sy + (ly - sy) * (i / STEPS);
+      // 歩行SE：8ステップごとに鳴らす（足音のリズム）
+      seStep++;
+      if (seStep % 8 === 0) audioManager.playWalkSe();
       this.draw();
       await new Promise<void>(r => setTimeout(r, 16));
     }
-    
+
+    this.isWalking = false;
     this.state.playerX = lx; this.state.playerY = ly;
     if (this.checkTraps()) { throw new Error("TRAP_HIT"); }
     this.draw();
@@ -700,6 +982,15 @@ export class CanvasEngine {
       if (c.collected || c.hidden) continue;
       if (Math.hypot(this.state.playerX - c.x, this.state.playerY - c.y) < 32) {
         c.collected = true; n++;
+        audioManager.playCoinSe();
+        // コイン浮き上がり演出
+        if (!this.state.coinFloatEffects) this.state.coinFloatEffects = [];
+        this.state.coinFloatEffects.push({
+          x: this.toCanvasX(c.x),
+          y: this.toCanvasY(c.y),
+          alpha: 1,
+          vy: -4,
+        });
       }
     }
     return n;
@@ -714,52 +1005,77 @@ export class CanvasEngine {
         .map(f => ({ ...f, progress: f.progress + 0.04 }))
         .filter(f => f.progress < 1.0);
     }
+    if (this.state.coinFloatEffects) {
+      this.state.coinFloatEffects = this.state.coinFloatEffects
+        .map(e => ({ ...e, y: e.y + e.vy, vy: e.vy - 0.3, alpha: e.alpha - 0.03 }))
+        .filter(e => e.alpha > 0);
+    }
+    // 雷落下アニメーション
+    if (this.state.lightningStrike && this.state.lightningStrike.progress < 1.2) {
+      this.state.lightningStrike.progress += 0.025;
+    }
   }
 
   async wait(ms: number): Promise<void> {
     const STEPS = Math.floor(ms / 100); 
     for (let i = 0; i < STEPS; i++) {
-      if (this.state.gameOver) return;
+      if (this.state.gameOver || this.state.gameWon) return;
 
       if (this.checkTraps()) {
         throw new Error("TRAP_HIT");
       }
       
-      if (i % 10 === 9 && this.state.enemyHP > 0 && this.state.enemyType !== "none") {
+      if (this.state.enemyHP > 0 && this.state.enemyType !== "none") {
         for (const ap of this.state.attackPoints) {
           if (!ap.hit && Math.hypot(this.state.playerX - ap.x, this.state.playerY - ap.y) <= ap.radius) {
-            this.state.enemyHP = Math.max(0, this.state.enemyHP - 1);
-            this.state.damageEffects.push({
-              x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
-            });
-            audioManager.playFireball();
-            audioManager.playHit();
-            if (!this.state.fireballEffects) this.state.fireballEffects = [];
-            this.state.fireballEffects.push({
-              x: this.toCanvasX(this.state.playerX),
-              y: this.toCanvasY(this.state.playerY),
-              tx: this.toCanvasX(this.state.enemyX),
-              ty: this.toCanvasY(this.state.enemyY),
-              progress: 0,
-              id: Date.now() + Math.random(),
-            });
+            // 継続ダメージ：毎ステップ(100ms)ごとに0.4ずつ累積し、整数部分をHPから削る
+            this.state.damageAccum = (this.state.damageAccum || 0) + 0.4;
+            const dmg = Math.floor(this.state.damageAccum);
+            if (dmg >= 1) {
+              this.state.damageAccum -= dmg;
+              this.state.enemyHP = Math.max(0, this.state.enemyHP - dmg);
+              this.state.damageEffects.push({
+                x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: `-${dmg} 💥`, alpha: 1,
+              });
+            }
+            // ファイアボールの発射間隔：最初のステップで即発射、以降0.2秒ごと
+            if (i === 0 || i % 2 === 1) {
+              audioManager.playFireball();
+              audioManager.playHit();
+              if (!this.state.fireballEffects) this.state.fireballEffects = [];
+              this.state.fireballEffects.push({
+                x: this.toCanvasX(this.state.playerX),
+                y: this.toCanvasY(this.state.playerY),
+                tx: this.toCanvasX(this.state.enemyX),
+                ty: this.toCanvasY(this.state.enemyY),
+                progress: 0,
+                id: Date.now() + Math.random(),
+              });
+            }
             if (this.state.enemyHP === 0) {
               ap.hit = true;
-              this.state.coins.forEach(c => {
-                if (c.hidden) c.hidden = false;
-              });
+              this.state.gameWon = true;
+              this.state.coins.forEach(c => { if (c.hidden) c.hidden = false; });
+              this.draw();
+              return; // 即座に終了
             }
           }
         }
         if (this.state.attackPoints.length === 0) {
           const distX = Math.abs(this.state.playerX - this.state.enemyX);
           if (distX <= 100) {
-            this.state.enemyHP = Math.max(0, this.state.enemyHP - 1);
-            this.state.damageEffects.push({
-              x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: "-1 💥", alpha: 1,
-            });
-            if (this.state.enemyHP === 0) {
-              this.state.gameWon = true;
+            // 継続ダメージ（攻撃ポイントなし時）
+            this.state.damageAccum = (this.state.damageAccum || 0) + 0.4;
+            const dmg = Math.floor(this.state.damageAccum);
+            if (dmg >= 1) {
+              this.state.damageAccum -= dmg;
+              this.state.enemyHP = Math.max(0, this.state.enemyHP - dmg);
+              this.state.damageEffects.push({
+                x: 0, y: this.toCanvasY(this.state.enemyY) - 50, text: `-${dmg} 💥`, alpha: 1,
+              });
+              if (this.state.enemyHP === 0) {
+                this.state.gameWon = true;
+              }
             }
           }
         }
