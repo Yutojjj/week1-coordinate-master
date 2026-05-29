@@ -9,6 +9,7 @@ interface BlocklyEditorProps {
   allowWait: boolean;
   defaultWaitSec: number;
   pointToTargets?: [string, string][];
+  initialCode?: string;
 }
 
 export default function BlocklyEditor({
@@ -17,6 +18,7 @@ export default function BlocklyEditor({
   allowWait,
   defaultWaitSec,
   pointToTargets,
+  initialCode,
 }: BlocklyEditorProps) {
   const blocklyDiv = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<any>(null);
@@ -24,11 +26,11 @@ export default function BlocklyEditor({
   useEffect(() => {
     if (!blocklyDiv.current) return;
 
-    // props のスナップショットをクロージャに閉じ込める
     const _stageBlocks = stageBlocks;
     const _allowWait = allowWait;
     const _defaultWaitSec = defaultWaitSec;
     const _pointToTargets = pointToTargets;
+    const _initialCode = initialCode;
 
     const initBlockly = async () => {
       const BlocklyModule = await import("blockly");
@@ -147,16 +149,11 @@ export default function BlocklyEditor({
         },
       };
 
-      // 第2章：〇度にむける（コンパス入力）
       Blockly.Blocks["point_in_direction"] = {
         init(this: any) {
           let angleField: any;
           try {
-            // clockwise=true, offset=90 で「右=90, 上=0, 左=-90/270, 下=180」に設定
-            angleField = new Blockly.FieldAngle(90, null, {
-              clockwise: true,
-              offset: 90,
-            });
+            angleField = new Blockly.FieldAngle(90, null, { clockwise: true, offset: 90 });
           } catch {
             angleField = new Blockly.FieldNumber(90, -360, 360);
           }
@@ -166,11 +163,9 @@ export default function BlocklyEditor({
           this.setPreviousStatement(true, null);
           this.setNextStatement(true, null);
           this.setColour(200);
-          this.setTooltip("していしたかくど（上=0, 右=90, 下=180, 左=-90）にむきをかえます");
         },
       };
 
-      // 第2章：〇歩動かす
       Blockly.Blocks["move_steps"] = {
         init(this: any) {
           this.appendDummyInput()
@@ -182,12 +177,8 @@ export default function BlocklyEditor({
         },
       };
 
-      // 第2章：〇へむける（オートエイム）
-      // stageConfig から自動生成された候補があればそれを使い、なければ空フォールバック
       const targetOpts: [string, string][] =
-        _pointToTargets && _pointToTargets.length > 0
-          ? _pointToTargets
-          : [["てき", "enemy"]];
+        _pointToTargets && _pointToTargets.length > 0 ? _pointToTargets : [["てき", "enemy"]];
 
       Blockly.Blocks["point_to_target"] = {
         init(this: any) {
@@ -200,6 +191,66 @@ export default function BlocklyEditor({
         },
       };
       Blockly.Blocks["point_to_coin"] = Blockly.Blocks["point_to_target"];
+
+      Blockly.Blocks["event_when_key_pressed"] = {
+        init(this: any) {
+          this.appendDummyInput()
+            .appendField(new Blockly.FieldDropdown([
+              ["右むきやじるし", "RIGHT"],
+              ["左むきやじるし", "LEFT"],
+              ["上むきやじるし", "UP"],
+              ["下むきやじるし", "DOWN"],
+            ]), "KEY")
+            .appendField("キーが おされたとき");
+          this.setPreviousStatement(false, null);
+          this.setNextStatement(true, null);
+          this.setColour(60); 
+        },
+      };
+
+      Blockly.Blocks["event_when_sprite_clicked"] = {
+        init(this: any) {
+          this.appendDummyInput()
+            .appendField("このスプライトが おされたとき");
+          this.setPreviousStatement(false, null);
+          this.setNextStatement(true, null);
+          this.setColour(60);
+        },
+      };
+
+      Blockly.Blocks["change_x_event"] = {
+        init(this: any) {
+          this.appendDummyInput()
+            .appendField(xLabel())
+            .appendField(new Blockly.FieldNumber(10, -10, 10), "VALUE")
+            .appendField("ずつかえる");
+          this.setPreviousStatement(true, null);
+          this.setNextStatement(true, null);
+          this.setColour(160);
+        },
+      };
+
+      Blockly.Blocks["change_y_event"] = {
+        init(this: any) {
+          this.appendDummyInput()
+            .appendField(yLabel())
+            .appendField(new Blockly.FieldNumber(10, -10, 10), "VALUE")
+            .appendField("ずつかえる");
+          this.setPreviousStatement(true, null);
+          this.setNextStatement(true, null);
+          this.setColour(160);
+        },
+      };
+
+      Blockly.Blocks["cast_barrier"] = {
+        init(this: any) {
+          this.appendDummyInput()
+            .appendField("🛡️ バリアをはる");
+          this.setPreviousStatement(true, null);
+          this.setNextStatement(true, null);
+          this.setColour(290);
+        },
+      };
 
       // ── コード生成 ──────────────────────────
 
@@ -226,9 +277,7 @@ export default function BlocklyEditor({
       };
       gen.forBlock["wait_sec"] = (block: any) => {
         const t = block.getFieldValue("TIME") ?? _defaultWaitSec;
-        return _allowWait
-          ? `await wait(${t} * 1000);\n`
-          : `/* まつはつかえません */\n`;
+        return _allowWait ? `await wait(${t} * 1000);\n` : `/* まつはつかえません */\n`;
       };
       gen.forBlock["repeat_n"] = (block: any) => {
         const n = block.getFieldValue("TIMES") ?? "1";
@@ -240,10 +289,8 @@ export default function BlocklyEditor({
         const body = gen.statementToCode(block, "DO");
         return `for(let _ri=0;_ri<(${n});_ri++){\n${body}}\n`;
       };
-      gen.forBlock["on_run"] = () => "";
       gen.forBlock["point_in_direction"] = (block: any) => {
         const raw = block.getFieldValue("ANGLE") ?? "90";
-        // FieldAngle の値をそのままゲームに渡す（右=90度）
         return `await pointInDirection(${raw});\n`;
       };
       gen.forBlock["move_steps"] = (block: any) => {
@@ -256,53 +303,75 @@ export default function BlocklyEditor({
       };
       gen.forBlock["point_to_coin"] = gen.forBlock["point_to_target"];
 
+      gen.forBlock["on_run"] = () => "";
+      gen.forBlock["event_when_key_pressed"] = () => "";
+      gen.forBlock["event_when_sprite_clicked"] = () => "";
+
+      gen.forBlock["change_x_event"] = (block: any) => {
+        const v = block.getFieldValue("VALUE") ?? "10";
+        return `playerX = playerX + (${v}); await engine.movePlayerInstantly(playerX, playerY);\n`;
+      };
+      gen.forBlock["change_y_event"] = (block: any) => {
+        const v = block.getFieldValue("VALUE") ?? "10";
+        return `playerY = playerY + (${v}); await engine.movePlayerInstantly(playerX, playerY);\n`;
+      };
+      gen.forBlock["cast_barrier"] = () => {
+        return `await engine.castBarrier();\n`;
+      };
+
       // ── ツールボックス ──────────────────────────
 
-      const contents: any[] = [
-        { kind: "label", text: "🟢 イベント" },
-        { kind: "block", type: "on_run" },
-      ];
+      const contents: any[] = [];
+      const hasEvents = _stageBlocks.some(b => b.startsWith("event_"));
 
-      // うごく（第1章）
-      if (_stageBlocks.includes("move_xy")) {
-        contents.push({ kind: "label", text: "📍 うごく" });
-        contents.push({ kind: "block", type: "move_xy" });
+      contents.push({ kind: "label", text: "🟢 イベント" });
+      if (!hasEvents) {
+        contents.push({ kind: "block", type: "on_run" });
+      }
+      if (_stageBlocks.includes("event_when_key_pressed")) {
+        contents.push({ kind: "block", type: "event_when_key_pressed" });
+      }
+      if (_stageBlocks.includes("event_when_sprite_clicked")) {
+        contents.push({ kind: "block", type: "event_when_sprite_clicked" });
       }
 
-      // むく（第2章）
+      if (_stageBlocks.includes("move_xy") || _stageBlocks.includes("change_x_event") || _stageBlocks.includes("change_y_event")) {
+        contents.push({ kind: "label", text: "📍 うごく" });
+        if (_stageBlocks.includes("move_xy")) contents.push({ kind: "block", type: "move_xy" });
+        if (_stageBlocks.includes("change_x_event")) contents.push({ kind: "block", type: "change_x_event" });
+        if (_stageBlocks.includes("change_y_event")) contents.push({ kind: "block", type: "change_y_event" });
+      }
+
       if (_stageBlocks.includes("point_in_direction")) {
         contents.push({ kind: "label", text: "🧭 むく" });
         contents.push({ kind: "block", type: "point_in_direction" });
       }
       if (_stageBlocks.includes("point_to_target") || _stageBlocks.includes("point_to_coin")) {
-        if (!_stageBlocks.includes("point_in_direction")) {
-          contents.push({ kind: "label", text: "🧭 むく" });
-        }
+        if (!_stageBlocks.includes("point_in_direction")) contents.push({ kind: "label", text: "🧭 むく" });
         contents.push({ kind: "block", type: "point_to_target" });
       }
 
-      // ほうごかす（第2章）
       if (_stageBlocks.includes("move_steps")) {
         contents.push({ kind: "label", text: "👣 ほうごかす" });
         contents.push({ kind: "block", type: "move_steps" });
       }
 
-      // まつ
       if (_stageBlocks.includes("wait")) {
-        contents.push({
-          kind: "label",
-          text: _allowWait ? "⏳ まつ" : "⏳ まつ（このステージではつかえません）",
-        });
+        contents.push({ kind: "label", text: _allowWait ? "⏳ まつ" : "⏳ まつ（つかえません）" });
         contents.push({ kind: "block", type: "wait_sec" });
       }
 
-      // くりかえす
       if (_stageBlocks.includes("repeat_times")) {
         contents.push({ kind: "label", text: "🔁 くりかえす" });
         contents.push({ kind: "block", type: "repeat_times" });
       } else if (_stageBlocks.includes("repeat")) {
         contents.push({ kind: "label", text: "🔁 くりかえす" });
         contents.push({ kind: "block", type: "repeat_n" });
+      }
+
+      if (_stageBlocks.includes("cast_barrier")) {
+        contents.push({ kind: "label", text: "🛡️ ぼうぎょ" });
+        contents.push({ kind: "block", type: "cast_barrier" });
       }
 
       const toolbox = { kind: "flyoutToolbox", contents };
@@ -321,24 +390,47 @@ export default function BlocklyEditor({
         renderer: "zelos",
       });
 
+      // ★ タイポ修正（parseFromString）
+      if (_initialCode) {
+        try {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(_initialCode, "text/xml");
+          Blockly.Xml.domToWorkspace(xmlDoc.documentElement, ws);
+        } catch (e) {
+          console.error("Failed to load initial code:", e);
+        }
+      }
+
       workspaceRef.current = ws;
 
       ws.addChangeListener(() => {
-        const allBlocks = ws.getAllBlocks(false);
-        const onRunBlock = allBlocks.find((b: any) => b.type === "on_run");
-        const hasOnRun = !!onRunBlock;
+        const topBlocks = ws.getTopBlocks(true);
+        let finalCode = "";
+        let hasValidStart = false;
 
-        let code = "";
-        if (onRunBlock) {
-          // on_runのgetNextBlock()で繋がった最初のブロックを取得
-          // blockToCodeは再帰的に次のブロックも処理するので1回だけ呼ぶ
-          const firstBlock: any = onRunBlock.getNextBlock ? onRunBlock.getNextBlock() : null;
-          if (firstBlock) {
-            code = gen.blockToCode(firstBlock) || "";
+        for (const tb of topBlocks) {
+          if (tb.type === "on_run") {
+            hasValidStart = true;
+            const next = tb.getNextBlock();
+            if (next) finalCode += gen.blockToCode(next) || "";
+          } else if (tb.type === "event_when_key_pressed") {
+            hasValidStart = true;
+            const key = tb.getFieldValue("KEY") || "RIGHT";
+            const next = tb.getNextBlock();
+            const body = next ? gen.blockToCode(next) : "";
+            // ★ キー方向に応じてプレイヤーの向きを変える
+            const dirAngle: Record<string, number> = { RIGHT: 90, LEFT: 270, UP: 0, DOWN: 180 };
+            const angle = dirAngle[key] ?? 90;
+            finalCode += `engine.onKeyPressed("${key}", async () => {\nengine.state.playerAngle = ${angle};\n${body}});\n`;
+          } else if (tb.type === "event_when_sprite_clicked") {
+            hasValidStart = true;
+            const next = tb.getNextBlock();
+            const body = next ? gen.blockToCode(next) : "";
+            finalCode += `engine.onSpriteClicked(async () => {\n${body}});\n`;
           }
         }
 
-        onCodeChange?.(hasOnRun ? code : `__NO_EVENT_BLOCK__\n${code}`);
+        onCodeChange?.(hasValidStart ? finalCode : `__NO_EVENT_BLOCK__\n${finalCode}`);
       });
     };
 
@@ -350,7 +442,7 @@ export default function BlocklyEditor({
         workspaceRef.current = null;
       }
     };
-  }, [stageBlocks, allowWait, defaultWaitSec, pointToTargets]);
+  }, [stageBlocks, allowWait, defaultWaitSec, pointToTargets, initialCode]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px", height: "100%" }}>

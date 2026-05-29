@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
 import { CanvasEngine, GameState, audioManager } from "@/lib/canvas-engine";
 import Canvas from "./components/Canvas";
 import dynamic from "next/dynamic";
 
-const BlocklyEditor = dynamic(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const BlocklyEditor = dynamic<any>(
   () => import("./components/BlocklyEditor"),
   {
     ssr: false,
@@ -23,14 +24,10 @@ interface PageProps {
   params: { stageId: string };
 }
 
-// ルビ付きストーリーコンポーネント
 function R({ children, ruby, color = "#7a6020" }: { children: string; ruby: string; color?: string }) {
   return <ruby>{children}<rt style={{ fontSize: "0.55em", color }}>{ruby}</rt></ruby>;
 }
 
-// 白文字用ルビは TitleWithRuby 内で R に color 指定して対応するため削除
-
-// 章バッジ用テキスト（ルビ付き）
 function ChapterBadge({ n }: { n: number }) {
   const kanjiNum = ["一","二","三","四","五"][n-1] ?? String(n);
   const rubyNum  = ["いち","に","さん","し","ご"][n-1] ?? "";
@@ -43,7 +40,6 @@ function ChapterBadge({ n }: { n: number }) {
   );
 }
 
-// タイトル用ルビマップ（ヘッダーは暗い背景なので白ルビ）
 function TitleWithRuby({ stageId, title }: { stageId: string; title: string }) {
   const W = ({ children, ruby }: { children: string; ruby: string }) =>
     <R ruby={ruby} color="rgba(255,220,140,0.8)">{children}</R>;
@@ -70,35 +66,16 @@ function StoryWithRuby({ stageId, story }: { stageId: string; story: string }) {
   return rubyMap[stageId] ? <span>{rubyMap[stageId]}</span> : <span>{story}</span>;
 }
 
-const ENEMY_LABELS: Record<string, string> = {
-  slime: "スライム",
-  orc: "オーク",
-  bat: "コウモリ",
-};
-
 export default function StagePage({ params }: PageProps) {
   const router = useRouter();
   const stageConfig = getStage(params.stageId);
-
-  // stageConfig のスプライト（主人公以外）から point_to_target の候補を自動生成
-  const pointToTargets = useMemo((): [string, string][] => {
-    if (!stageConfig) return [];
-    return [
-      ...(stageConfig.enemyType !== "none"
-        ? [[ENEMY_LABELS[stageConfig.enemyType] ?? stageConfig.enemyType, stageConfig.enemyType] as [string, string]]
-        : []),
-      ...stageConfig.attackPoints.map((_, i): [string, string] => [`まほうじん${i + 1}`, `circle${i + 1}`]),
-      ...stageConfig.coins
-        .map((c, i): [string, string] | null => c.label ? [c.label, `coin${i}`] : null)
-        .filter((x): x is [string, string] => x !== null),
-    ];
-  }, [stageConfig]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<CanvasEngine | null>(null);
   const animRafRef = useRef<number | null>(null);
   const isRunningRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const keyLoopRef = useRef<number | null>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [message, setMessage] = useState("");
@@ -114,11 +91,8 @@ export default function StagePage({ params }: PageProps) {
   const [hintSeconds, setHintSeconds] = useState(10);
   const [bgmReady, setBgmReady] = useState(false);
 
-  // ページ表示時に即座にBGMを鳴らすための「タップ待ちオーバーレイ」
-  // ブラウザはユーザー操作なしの自動再生を禁止しているため、
-  // 最初の1クリックをオーバーレイで受け取りその場でBGM開始する
   const handleBgmStart = () => {
-    const isBoss = stageConfig?.enemyType === "orc";
+    const isBoss = stageConfig?.enemyType === "orc" || stageConfig?.enemyType === "bat";
     if (isBoss) {
       audioManager.startBossBgm();
     } else {
@@ -131,20 +105,25 @@ export default function StagePage({ params }: PageProps) {
     if (!stageConfig || !canvasRef.current) return;
     if (animRafRef.current) { cancelAnimationFrame(animRafRef.current); }
     if (timerRef.current) { clearInterval(timerRef.current); }
+    if (keyLoopRef.current) { clearTimeout(keyLoopRef.current); }
 
     const coins = stageConfig.coins.map(c => ({ ...c, collected: false, hidden: c.hidden ?? false }));
     const attackPoints = stageConfig.attackPoints.map(a => ({ ...a, hit: false }));
     const traps = stageConfig.traps ? JSON.parse(JSON.stringify(stageConfig.traps)) : [];
+    const potions = stageConfig.potions ? stageConfig.potions.map(p => ({ ...p, collected: false })) : [];
+
+    const startX = stageConfig.playerStartX ?? -150;
+    const startY = stageConfig.playerStartY ?? -150;
 
     const initialState: GameState = {
-      playerX: -150, playerY: -150,
-      playerAngle: 90, // ★ 追加：初期状態は右（90度）
+      playerX: startX, playerY: startY,
+      playerAngle: 90, 
       enemyX: stageConfig.enemyX, 
       enemyY: stageConfig.enemyY,
       enemyHP: stageConfig.enemyHP, 
       enemyMaxHP: stageConfig.enemyHP,
       enemyType: stageConfig.enemyType,
-      coins, attackPoints, traps,
+      coins, attackPoints, traps, potions, 
       gameOver: false, gameWon: false,
       damageEffects: [],
       fireballEffects: [],
@@ -156,6 +135,7 @@ export default function StagePage({ params }: PageProps) {
       hideCoinCoords: false,
       chapter: stageConfig.chapter,
       timeLeft: 0,
+      isStarted: false, // ★ 初期状態は開始前
     };
 
     const engine = new CanvasEngine(canvasRef.current, initialState);
@@ -176,7 +156,7 @@ export default function StagePage({ params }: PageProps) {
     return () => {
       if (animRafRef.current) cancelAnimationFrame(animRafRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
-      // ページ離脱時にBGMを止める
+      if (keyLoopRef.current) clearTimeout(keyLoopRef.current);
       audioManager.stopAll();
     };
   }, [stageConfig]);
@@ -184,7 +164,6 @@ export default function StagePage({ params }: PageProps) {
   const handleRun = useCallback(async () => {
     if (!engineRef.current || !stageConfig || isRunningRef.current || !code.trim()) return;
 
-    // イベントブロック（じっこうがおされたとき）がない場合は実行しない
     if (code.includes("__NO_EVENT_BLOCK__")) {
       setMessage("「じっこうがおされたとき」ブロックをつかおう！");
       setStatus("idle");
@@ -197,13 +176,20 @@ export default function StagePage({ params }: PageProps) {
     setMessage("▶ じっこうちゅう...");
     setIsCleared(false);
     setIsGameOver(false);
-    // BGMはそのまま継続（切り替えない）
 
     const engine = engineRef.current;
 
+    // ★ 実行時に開始フラグを立てる（これで敵が攻撃し始める）
+    engine.state.isStarted = true;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).keyCallbacks = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (engine as any).clickCallbacks = [];
+
     engine.startTime = Date.now();
-    engine.state.playerX = -150;
-    engine.state.playerY = -150;
+    engine.state.playerX = stageConfig.playerStartX ?? -150;
+    engine.state.playerY = stageConfig.playerStartY ?? -150;
     engine.state.playerAngle = 90;
     engine.state.enemyHP = stageConfig.enemyHP;
     engine.state.gameOver = false;
@@ -212,6 +198,7 @@ export default function StagePage({ params }: PageProps) {
       c.collected = false;
       c.hidden = stageConfig.coins[i]?.hidden ?? false;
     });
+    engine.state.potions?.forEach(p => p.collected = false);
     engine.state.attackPoints.forEach(a => a.hit = false);
     engine.state.timeLeft = 0;
     engine.state.damageEffects = [];
@@ -219,7 +206,12 @@ export default function StagePage({ params }: PageProps) {
     engine.state.coinFloatEffects = [];
     engine.state.lightningStrike = null;
     engine.state.damageAccum = 0;
+    engine.state.isBarrierActive = false;
     setCollectedCoins(0);
+    engine.state.treasureBox = null; // ★ 宝箱をリセット
+    engine.state.isOrcKing = false; // ★ オークキングフラグをリセット
+    engine.state.lastOrcKingFireTime = undefined;
+    engine.state.barrierCount = 0;
     engine.draw();
 
     const movePlayer = async (x: number, y: number) => {
@@ -251,7 +243,6 @@ export default function StagePage({ params }: PageProps) {
       await new Promise<void>(r => setTimeout(r, 200)); 
     };
 
-    // ★ 第2章：対象物の方向に自動で向く（オートエイム）
     const pointToTarget = async (target: string) => {
       if (engine.state.gameOver) return;
       let tx = 0, ty = 0;
@@ -266,7 +257,6 @@ export default function StagePage({ params }: PageProps) {
         const coin = engine.state.coins.filter(c => !c.collected)[idx];
         if (coin) { tx = coin.x; ty = coin.y; }
       }
-      // Scratch角度系：上=0, 右=90, 下=180, 左=-90
       const dx = tx - engine.state.playerX;
       const dy = ty - engine.state.playerY;
       const angle = Math.atan2(dx, dy) * (180 / Math.PI);
@@ -291,16 +281,50 @@ export default function StagePage({ params }: PageProps) {
       }
     };
 
+    const isChap3 = stageConfig.chapter === 3;
+    if (isChap3) {
+      if (keyLoopRef.current) clearTimeout(keyLoopRef.current);
+      
+      const pollLoop = () => {
+        if (!isRunningRef.current) return;
+        
+        const total = engine.state.coins.filter(c => c.collected).length;
+        setCollectedCoins(total);
+        if (total > 0 && total < engine.state.coins.length) {
+           setMessage(`🪙 コインをゲット！ (${total}/${engine.state.coins.length})`);
+        }
+
+        if (engine.state.gameWon) {
+          setStatus("win");
+          setMessage("🎉 クリア！");
+          setIsCleared(true);
+          isRunningRef.current = false;
+          setIsRunning(false);
+          return;
+        }
+        if (engine.state.gameOver) {
+          setStatus("lose");
+          setMessage(engine.state.lightningStrike ? "⚡ カミナリにうたれた！" : "やられてしまった！");
+          setTimeout(() => setIsGameOver(true), 2000);
+          isRunningRef.current = false;
+          setIsRunning(false);
+          return;
+        }
+        keyLoopRef.current = setTimeout(pollLoop, 100) as unknown as number;
+      };
+      pollLoop();
+    }
+
     try {
       const fn = new Function(
-        // ★ 第2章の関数も渡す
-        "movePlayer", "wait", "checkEnemyAlive", "pointInDirection", "moveSteps", "pointToTarget",
+        "engine", "movePlayer", "wait", "checkEnemyAlive", "pointInDirection", "moveSteps", "pointToTarget",
         `"use strict";
          let playerX = ${engine.state.playerX};
          let playerY = ${engine.state.playerY};
          return (async () => { ${code.replace("__NO_EVENT_BLOCK__\n", "")} })()`
       );
-      await fn(movePlayer, wait, checkEnemyAlive, pointInDirection, moveSteps, pointToTarget);
+
+      await fn(engine, movePlayer, wait, checkEnemyAlive, pointInDirection, moveSteps, pointToTarget);
     } catch (e: any) {
       if (e.message === "TRAP_HIT") {
         engine.state.gameOver = true;
@@ -317,18 +341,20 @@ export default function StagePage({ params }: PageProps) {
       }
     }
 
+    if (isChap3) {
+      return; 
+    }
+
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-    // gameWon が立っていればクリア（waitの中でreturnした場合も含む）
     if (engine.state.gameWon) {
       engine.draw();
       setStatus("win");
       setMessage("🎉 まものをたおした！クリア！");
       setIsCleared(true);
     } else if (engine.state.gameOver) {
-      // gameOverはcatch節またはtrapで既に処理済み（TRAP_HITは即時モーダル表示）
+      // 処理済み
     } else {
-      // コード実行完了後の判定
       const left = engine.state.coins.filter(c => !c.collected).length;
       const enemyDefeated = engine.state.enemyType !== "none" && engine.state.enemyHP === 0;
       if (enemyDefeated || (engine.state.enemyType === "none" && left === 0)) {
@@ -338,7 +364,6 @@ export default function StagePage({ params }: PageProps) {
         setMessage(enemyDefeated ? "🎉 まものをたおした！クリア！" : "🎉 ぜんぶのコインをとった！クリア！");
         setIsCleared(true);
       } else {
-        // クリアできなかった → 雷演出 → 数秒後にモーダル
         engine.state.gameOver = true;
         engine.state.lightningStrike = {
           progress: 0,
@@ -357,30 +382,64 @@ export default function StagePage({ params }: PageProps) {
     setIsRunning(false);
   }, [code, stageConfig]);
 
+  // ★ やり直しボタンの処理（実行中でも完全に初期状態に戻せる）
   const handleReset = useCallback(() => {
-    if (!engineRef.current || !stageConfig || isRunningRef.current) return;
+    if (!engineRef.current || !stageConfig) return;
+    
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    const e = engineRef.current;
-    e.startTime = Date.now();
-    e.state.playerX = -150; e.state.playerY = -150;
-    e.state.playerAngle = 90; // ★ リセット
-    e.state.enemyHP = stageConfig.enemyHP;
-    e.state.gameOver = false; e.state.gameWon = false;
-    e.state.coins.forEach((c, i) => {
-      c.collected = false;
-      c.hidden = stageConfig.coins[i]?.hidden ?? false;
-    });
-    e.state.attackPoints.forEach(a => a.hit = false);
-    e.state.timeLeft = 0;
-    e.state.damageEffects = [];
-    e.state.fireballEffects = [];
-    setCollectedCoins(0);
-    setTimeLeft(stageConfig.timeLimit);
+    if (keyLoopRef.current) { clearTimeout(keyLoopRef.current); keyLoopRef.current = null; }
+    
+    isRunningRef.current = false;
+    setIsRunning(false);
     setStatus("idle");
     setMessage("");
     setIsCleared(false);
     setIsGameOver(false);
-    e.draw();
+
+    const e = engineRef.current;
+    
+    // 現在実行中の関数を終わらせるために一旦 gameOver を立てる
+    e.state.gameOver = true; 
+    
+    // 少し待ってから完全に初期化
+    setTimeout(() => {
+      e.startTime = Date.now();
+      e.state.isStarted = false; // ★ ここで未開始状態に戻す
+      e.state.playerX = stageConfig.playerStartX ?? -150;
+      e.state.playerY = stageConfig.playerStartY ?? -150;
+      e.state.playerAngle = 90; 
+      e.state.enemyX = stageConfig.enemyX;
+      e.state.enemyY = stageConfig.enemyY;
+      e.state.enemyTargetX = undefined;
+      e.state.enemyTargetY = undefined;
+      e.state.enemyHP = stageConfig.enemyHP;
+      e.state.gameOver = false; 
+      e.state.gameWon = false;
+      e.state.coins.forEach((c, i) => {
+        c.collected = false;
+        c.hidden = stageConfig.coins[i]?.hidden ?? false;
+      });
+      e.state.potions?.forEach(p => p.collected = false);
+      e.state.attackPoints = []; // 魔法陣や予告円をリセット
+      e.state.timeLeft = 0;
+      e.state.damageEffects = [];
+      e.state.fireballEffects = [];
+      e.state.coinFloatEffects = [];
+      e.state.lightningStrike = null;
+      e.state.isBarrierActive = false;
+      e.state.magicCircleSpawnTime = undefined;
+      e.state.treasureBox = null; // ★ 宝箱をリセット
+      e.state.isOrcKing = false; // ★ オークキングフラグをリセット
+      e.state.lastOrcKingFireTime = undefined;
+      e.state.barrierCount = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (e as any).keyCallbacks = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (e as any).clickCallbacks = [];
+      setCollectedCoins(0);
+      setTimeLeft(stageConfig.timeLimit);
+      e.draw();
+    }, 50);
   }, [stageConfig]);
 
   const handleNextStage = () => {
@@ -412,9 +471,7 @@ export default function StagePage({ params }: PageProps) {
         setHintVisible(false);
         return;
       }
-      // 毎フレーム強制描画
       engine.draw();
-      // 秒カウント更新
       const newSec = Math.ceil(remaining / 1000);
       if (newSec !== countdownSec) {
         countdownSec = newSec;
@@ -432,7 +489,6 @@ export default function StagePage({ params }: PageProps) {
 
   const chNum = stageConfig.chapter;
 
-  // ゴールドカラー定数
   const gold = "#B8972A";
   const goldLight = "#F5EDCC";
   const goldGrad = "linear-gradient(135deg, #C9A84C, #A0762A)";
@@ -441,7 +497,6 @@ export default function StagePage({ params }: PageProps) {
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#F7F4EE", fontFamily: "'Inter', 'Noto Sans JP', sans-serif" }}>
 
-      {/* ── ヘッダー（ゴールドグラデーション） ── */}
       <div style={{
         background: "linear-gradient(135deg, #2a1f0a 0%, #4a3510 40%, #3a2808 100%)",
         padding: "0 24px",
@@ -454,19 +509,9 @@ export default function StagePage({ params }: PageProps) {
         position: "relative",
         overflow: "hidden",
       }}>
-        {/* 装飾ライン（左） */}
-        <div style={{
-          position: "absolute", left: 0, top: 0, bottom: 0, width: "4px",
-          background: goldGrad,
-        }} />
-        {/* 光沢オーバーレイ */}
-        <div style={{
-          position: "absolute", inset: 0,
-          background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 60%)",
-          pointerEvents: "none",
-        }} />
+        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "4px", background: goldGrad }} />
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 60%)", pointerEvents: "none" }} />
 
-        {/* もどるボタン */}
         <button
           onClick={() => router.push("/menu")}
           style={{ display: "flex", alignItems: "center", gap: "4px", color: "rgba(255,220,140,0.7)", fontSize: "13px", background: "none", border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: "6px", transition: "all 0.15s", zIndex: 1 }}
@@ -478,7 +523,6 @@ export default function StagePage({ params }: PageProps) {
 
         <div style={{ width: "1px", height: "20px", background: "rgba(255,220,140,0.2)", zIndex: 1 }} />
 
-        {/* 章バッジ */}
         <span style={{
           fontSize: "12px", fontWeight: 800,
           padding: "4px 14px", borderRadius: "20px",
@@ -492,12 +536,10 @@ export default function StagePage({ params }: PageProps) {
           <ChapterBadge n={chNum} />
         </span>
 
-        {/* ステージ番号 */}
         <span style={{ fontSize: "13px", color: "rgba(255,220,140,0.6)", fontWeight: 600, zIndex: 1, flexShrink: 0 }}>
           {stageConfig.stage}-{stageConfig.area}
         </span>
 
-        {/* タイトル（ルビ付き） */}
         <span style={{
           fontSize: "16px", fontWeight: 800, color: "#F5EDCC",
           letterSpacing: "0.02em", zIndex: 1,
@@ -507,19 +549,12 @@ export default function StagePage({ params }: PageProps) {
           <TitleWithRuby stageId={params.stageId} title={stageConfig.title} />
         </span>
 
-        {/* 右側の装飾（金の水平線） */}
         <div style={{ flex: 1, zIndex: 1 }} />
-        <div style={{
-          width: "80px", height: "1px",
-          background: "linear-gradient(90deg, transparent, rgba(255,220,140,0.4))",
-          zIndex: 1,
-        }} />
+        <div style={{ width: "80px", height: "1px", background: "linear-gradient(90deg, transparent, rgba(255,220,140,0.4))", zIndex: 1 }} />
       </div>
 
-      {/* ── メインエリア ── */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-        {/* ── 左：エディタパネル ── */}
         <div style={{
           width: showBlockly ? "400px" : "0px",
           flexShrink: 0,
@@ -533,12 +568,10 @@ export default function StagePage({ params }: PageProps) {
         }}>
           <div style={{ width: "400px", height: "100%", display: "flex", flexDirection: "column" }}>
 
-            {/* コントロールエリア */}
             <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid #f3f0e8`, flexShrink: 0 }}>
-
-              {/* 実行・リセット 横並び */}
+              
+              {/* ★ ここにやり直すボタンを追加 */}
               <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-                {/* 実行ボタン */}
                 <button
                   onClick={handleRun}
                   disabled={isRunning || !code.trim() || isCleared}
@@ -569,9 +602,27 @@ export default function StagePage({ params }: PageProps) {
                 >
                   {isRunning ? "⏳ じっこうちゅう..." : "▶ じっこう"}
                 </button>
+                <button
+                  onClick={handleReset}
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: "12px",
+                    border: `1px solid ${goldLight}`,
+                    background: "#fff",
+                    color: gold,
+                    fontWeight: 800,
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#faf8f3"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+                >
+                  🔄 やりなおす
+                </button>
               </div>
 
-              {/* ステータスメッセージ */}
               {message && (
                 <div style={{
                   marginTop: "10px",
@@ -589,23 +640,20 @@ export default function StagePage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Blockly本体 */}
             <div style={{ flex: 1, minHeight: 0, padding: "8px" }}>
               <BlocklyEditor
                 onCodeChange={setCode}
                 stageBlocks={stageConfig.blocklyBlocks}
                 allowWait={stageConfig.allowWait}
                 defaultWaitSec={stageConfig.defaultWaitSec}
-                pointToTargets={pointToTargets}
+                initialCode={stageConfig.initialCode}
               />
             </div>
           </div>
         </div>
 
-        {/* ── 右：シミュレーター ── */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
 
-          {/* ツールバー（エディタ開閉ボタン） */}
           <div style={{
             height: "40px",
             background: "#fff",
@@ -638,7 +686,6 @@ export default function StagePage({ params }: PageProps) {
             </button>
           </div>
 
-          {/* ストーリーバー（ルビ付き） */}
           <div style={{
             background: goldLight,
             borderBottom: `1px solid #e8d99a`,
@@ -650,7 +697,6 @@ export default function StagePage({ params }: PageProps) {
             </p>
           </div>
 
-          {/* ヒント：失敗時のみストーリーバー直下に表示 */}
           {status === "lose" && (
             <div style={{
               background: "#fffbeb",
@@ -672,10 +718,8 @@ export default function StagePage({ params }: PageProps) {
             </div>
           )}
 
-          {/* キャンバス */}
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", position: "relative", background: "#F7F4EE" }}>
 
-            {/* ヒントボタン：シミュレーター右上（showHintButtonのステージのみ） */}
             {stageConfig.showHintButton && (
               <button
                 onClick={handleHint}
@@ -703,34 +747,14 @@ export default function StagePage({ params }: PageProps) {
               </button>
             )}
 
-            {/* キャンバス＋軸ラベルをまとめたラッパー */}
             <div style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
-
-              {/* X軸ラベル（キャンバス右外・X軸＝高さ50%） */}
-              <div style={{
-                position: "absolute", right: -18, top: "50%", transform: "translateY(-50%)",
-                color: "rgba(220,60,60,0.95)", fontWeight: 900, fontSize: "14px",
-                fontFamily: "monospace",
-              }}>X</div>
-
-              {/* Y軸ラベル（キャンバス上外・Y軸＝幅50%） */}
-              <div style={{
-                position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)",
-                color: "rgba(40,140,230,0.95)", fontWeight: 900, fontSize: "14px",
-                fontFamily: "monospace",
-              }}>Y</div>
-
-              <div style={{
-                borderRadius: "16px",
-                overflow: "hidden",
-                boxShadow: "0 8px 40px rgba(184,151,42,0.15), 0 2px 8px rgba(0,0,0,0.08)",
-                border: `1px solid ${goldLight}`,
-              }}>
+              <div style={{ position: "absolute", right: -18, top: "50%", transform: "translateY(-50%)", color: "rgba(220,60,60,0.95)", fontWeight: 900, fontSize: "14px", fontFamily: "monospace" }}>X</div>
+              <div style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", color: "rgba(40,140,230,0.95)", fontWeight: 900, fontSize: "14px", fontFamily: "monospace" }}>Y</div>
+              <div style={{ borderRadius: "16px", overflow: "hidden", boxShadow: "0 8px 40px rgba(184,151,42,0.15), 0 2px 8px rgba(0,0,0,0.08)", border: `1px solid ${goldLight}` }}>
                 <Canvas width={800} height={560} ref={canvasRef} />
               </div>
             </div>
 
-            {/* クリアモーダル */}
             {isCleared && (
               <div style={{
                 position: "absolute", inset: 0,
@@ -750,7 +774,6 @@ export default function StagePage({ params }: PageProps) {
                   width: "calc(100% - 48px)",
                   animation: "slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                 }}>
-                  {/* ゴールドの装飾ライン */}
                   <div style={{ width: "40px", height: "3px", background: goldGrad, borderRadius: "2px", margin: "0 auto 20px" }} />
                   <div style={{ width: "120px", height: "120px", margin: "0 auto 8px", borderRadius: "50%", overflow: "hidden", boxShadow: `0 0 24px ${goldLight}` }}>
                     <img src="/sprites/clear_cheer.jpg" alt="クリア" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -803,7 +826,6 @@ export default function StagePage({ params }: PageProps) {
               </div>
             )}
 
-            {/* ゲームオーバーモーダル */}
             {isGameOver && (
               <div style={{
                 position: "absolute", inset: 0,
@@ -904,7 +926,6 @@ export default function StagePage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* アニメーション */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
@@ -924,10 +945,8 @@ export default function StagePage({ params }: PageProps) {
         }
       `}</style>
 
-      {/* BGM開始オーバーレイ */}
       {!bgmReady && (
-        stageConfig.enemyType === "orc" ? (
-          /* ── ボス演出オーバーレイ ── */
+        stageConfig.enemyType === "orc" || stageConfig.enemyType === "bat" ? (
           <div
             onClick={handleBgmStart}
             style={{
@@ -939,28 +958,23 @@ export default function StagePage({ params }: PageProps) {
               overflow: "hidden",
             }}
           >
-            {/* 背景の光芒 */}
             <div style={{
               position: "absolute", inset: 0,
               background: "radial-gradient(ellipse 60% 50% at 50% 60%, rgba(180,100,0,0.18) 0%, transparent 70%)",
               pointerEvents: "none",
             }} />
-            {/* 雷エフェクト左右 */}
             <div style={{ position: "absolute", left: "8%", top: "10%", fontSize: "48px", opacity: 0.25, animation: "bgmPulse 2.1s ease-in-out infinite", animationDelay: "0.3s" }}>⚡</div>
             <div style={{ position: "absolute", right: "8%", top: "15%", fontSize: "36px", opacity: 0.2, animation: "bgmPulse 1.8s ease-in-out infinite", animationDelay: "0.9s" }}>⚡</div>
             <div style={{ position: "absolute", left: "15%", bottom: "20%", fontSize: "28px", opacity: 0.15, animation: "bgmPulse 2.4s ease-in-out infinite" }}>⚡</div>
             <div style={{ position: "absolute", right: "12%", bottom: "25%", fontSize: "40px", opacity: 0.18, animation: "bgmPulse 1.6s ease-in-out infinite", animationDelay: "1.2s" }}>⚡</div>
 
             <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px", maxWidth: "420px" }}>
-
-              {/* ゴールドの細いライン */}
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px", justifyContent: "center" }}>
                 <div style={{ flex: 1, height: "1px", background: "linear-gradient(to right, transparent, rgba(184,151,42,0.6))" }} />
                 <span style={{ fontSize: "11px", color: "rgba(184,151,42,0.7)", fontWeight: 700, letterSpacing: "0.2em" }}>BOSS STAGE</span>
                 <div style={{ flex: 1, height: "1px", background: "linear-gradient(to left, transparent, rgba(184,151,42,0.6))" }} />
               </div>
 
-              {/* オークアイコン（キャンバスから画像を流用） */}
               <div style={{
                 width: "110px", height: "110px", margin: "0 auto 20px",
                 borderRadius: "50%",
@@ -971,14 +985,12 @@ export default function StagePage({ params }: PageProps) {
                 background: "#1a0800",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <img
-                  src="/sprites/enemy_orc.png"
-                  alt="オーク"
-                  style={{ width: "90px", height: "90px", imageRendering: "pixelated" }}
-                />
+                {stageConfig.enemyType === "bat" 
+                  ? <img src="/sprites/enemy_bat.png" alt="コウモリ" style={{ width: "90px", height: "90px", imageRendering: "pixelated" }} />
+                  : <img src="/sprites/enemy_orc.png" alt="オーク" style={{ width: "90px", height: "90px", imageRendering: "pixelated" }} />
+                }
               </div>
 
-              {/* ステージ名 */}
               <p style={{ color: "rgba(184,151,42,0.7)", fontSize: "12px", margin: "0 0 6px", letterSpacing: "0.15em", fontWeight: 600 }}>
                 {stageConfig.stage}-{stageConfig.area}
               </p>
@@ -991,7 +1003,6 @@ export default function StagePage({ params }: PageProps) {
                 <TitleWithRuby stageId={params.stageId} title={stageConfig.title} />
               </h2>
 
-              {/* ストーリー文（ルビ付き） */}
               <div style={{
                 background: "rgba(255,255,255,0.04)",
                 border: "1px solid rgba(184,151,42,0.2)",
@@ -1004,7 +1015,6 @@ export default function StagePage({ params }: PageProps) {
                 <StoryWithRuby stageId={params.stageId} story={stageConfig.story} />
               </div>
 
-              {/* タップボタン */}
               <div style={{
                 display: "inline-flex", alignItems: "center", gap: "8px",
                 padding: "13px 32px",
@@ -1023,7 +1033,6 @@ export default function StagePage({ params }: PageProps) {
             </div>
           </div>
         ) : (
-          /* ── 通常ステージ オーバーレイ（ボスと同じスタイル） ── */
           <div
             onClick={handleBgmStart}
             style={{
@@ -1035,21 +1044,17 @@ export default function StagePage({ params }: PageProps) {
               overflow: "hidden",
             }}
           >
-            {/* 背景光 */}
             <div style={{
               position: "absolute", inset: 0,
               background: "radial-gradient(ellipse 60% 50% at 50% 60%, rgba(60,100,180,0.15) 0%, transparent 70%)",
               pointerEvents: "none",
             }} />
-            {/* 星型の装飾 */}
             <div style={{ position: "absolute", left: "8%", top: "12%", fontSize: "36px", opacity: 0.2, animation: "bgmPulse 2.2s ease-in-out infinite" }}>✨</div>
             <div style={{ position: "absolute", right: "10%", top: "18%", fontSize: "28px", opacity: 0.15, animation: "bgmPulse 1.9s ease-in-out infinite", animationDelay: "0.8s" }}>🌟</div>
             <div style={{ position: "absolute", left: "15%", bottom: "22%", fontSize: "24px", opacity: 0.15, animation: "bgmPulse 2.5s ease-in-out infinite", animationDelay: "0.4s" }}>✨</div>
             <div style={{ position: "absolute", right: "12%", bottom: "28%", fontSize: "32px", opacity: 0.18, animation: "bgmPulse 1.7s ease-in-out infinite", animationDelay: "1.2s" }}>🌟</div>
 
             <div style={{ textAlign: "center", position: "relative", zIndex: 1, padding: "0 24px", maxWidth: "420px" }}>
-
-              {/* 上部ライン */}
               <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px", justifyContent: "center" }}>
                 <div style={{ flex: 1, height: "1px", background: "linear-gradient(to right, transparent, rgba(184,151,42,0.5))" }} />
                 <span style={{ fontSize: "11px", color: "rgba(184,151,42,0.65)", fontWeight: 700, letterSpacing: "0.2em" }}>
@@ -1058,7 +1063,6 @@ export default function StagePage({ params }: PageProps) {
                 <div style={{ flex: 1, height: "1px", background: "linear-gradient(to left, transparent, rgba(184,151,42,0.5))" }} />
               </div>
 
-              {/* アイコン */}
               <div style={{
                 width: "110px", height: "110px", margin: "0 auto 20px",
                 borderRadius: "50%",
@@ -1069,9 +1073,7 @@ export default function StagePage({ params }: PageProps) {
                 background: "#080c18",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                {stageConfig.enemyType === "bat"
-                  ? <img src="/sprites/enemy_bat.png" alt="コウモリ" style={{ width: "80px", height: "80px", imageRendering: "pixelated" }} />
-                  : stageConfig.enemyType === "none" && (params.stageId === "1-1-2" || params.stageId === "1-1-3")
+                {stageConfig.enemyType === "none" && (params.stageId === "1-1-2" || params.stageId === "1-1-3")
                   ? <img src="/sprites/coin_frame1.png" alt="コイン" style={{ width: "80px", height: "80px", imageRendering: "pixelated" }} />
                   : stageConfig.enemyType === "none"
                   ? <img src="/sprites/player_front.png" alt="キャラ" style={{ width: "80px", height: "80px", imageRendering: "pixelated" }} />
@@ -1079,7 +1081,6 @@ export default function StagePage({ params }: PageProps) {
                 }
               </div>
 
-              {/* タイトル */}
               <h2 style={{
                 fontSize: "22px", fontWeight: 900, color: "#F5EDCC",
                 margin: "0 0 20px",
@@ -1089,7 +1090,6 @@ export default function StagePage({ params }: PageProps) {
                 <TitleWithRuby stageId={params.stageId} title={stageConfig.title} />
               </h2>
 
-              {/* ストーリー文 */}
               <div style={{
                 background: "rgba(255,255,255,0.04)",
                 border: "1px solid rgba(184,151,42,0.18)",
@@ -1102,7 +1102,6 @@ export default function StagePage({ params }: PageProps) {
                 <StoryWithRuby stageId={params.stageId} story={stageConfig.story} />
               </div>
 
-              {/* タップボタン */}
               <div style={{
                 display: "inline-flex", alignItems: "center", gap: "8px",
                 padding: "13px 32px", borderRadius: "50px",
