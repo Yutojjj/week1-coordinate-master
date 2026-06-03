@@ -126,8 +126,9 @@ const CHAPTERS = [
         color: "#F43F5E",
         badge: <>おうよう</>,
         areas: [
-          { id: "2-2-1", area: 1, title: <>負傷した村民への救護</>, icon: "🧑‍🌾", boss: false },
-          { id: "2-2-2", area: 2, title: <>魔法陣の攻防</>, icon: "orc", boss: true },
+          { id: "2-2-1", area: 1, title: <>〇へむけてこうげき！</>, icon: "🎯", boss: false },
+          { id: "2-2-2", area: 2, title: <>負傷した村民への救護</>, icon: "🧑‍🌾", boss: false },
+          { id: "2-2-3", area: 3, title: <>魔法陣の攻防</>, icon: "orc", boss: true },
         ],
       },
     ],
