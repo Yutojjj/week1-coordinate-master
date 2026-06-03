@@ -1775,6 +1775,7 @@ export class CanvasEngine {
                 ty: this.toCanvasY(fbTargetY),
                 progress: 0,
                 id: Date.now() + Math.random(),
+                speedMultiplier: 6.0,
               } as any);
             }
 
