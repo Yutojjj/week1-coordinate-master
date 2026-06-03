@@ -5,7 +5,9 @@ import React, { useEffect, useState } from "react";
 export default function ModeSelect() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null;
+  if (!mounted) return (
+    <main style={{ minHeight: "100vh", background: "#1a1a2e" }} />
+  );
 
   return (
     <main suppressHydrationWarning style={{
@@ -25,12 +27,10 @@ export default function ModeSelect() {
         .mode-btn:hover { transform: translateY(-6px) scale(1.03) !important; }
       `}</style>
 
-      {/* 暗幕（クリックを邪魔しないように pointerEvents: "none" を追加） */}
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,10,0.55)", zIndex: 0, pointerEvents: "none" }} />
 
       <div style={{ position: "relative", zIndex: 1, textAlign: "center", padding: "0 24px", width: "100%", maxWidth: 700 }}>
 
-        {/* タイトル */}
         <h1 style={{
           fontFamily: "'Orbitron', sans-serif",
           fontSize: "clamp(22px, 4vw, 38px)",
@@ -51,13 +51,11 @@ export default function ModeSelect() {
           ✦ ケーニーズプログラミングきょうしつ ✦
         </p>
 
-        {/* モード選択 */}
         <div style={{
           display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20,
           animation: "fadeUp 0.6s ease 0.2s both",
         }}>
 
-          {/* プログラミング（window.location.hrefで強制遷移） */}
           <div
             className="mode-btn"
             onClick={() => { window.location.href = "/menu"; }}
@@ -76,7 +74,6 @@ export default function ModeSelect() {
             />
           </div>
 
-          {/* タイピング */}
           <a
             href="https://typing.playgram.jp/select"
             target="_blank"
