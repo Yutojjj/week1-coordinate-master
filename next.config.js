@@ -1,5 +1,5 @@
-import type { NextConfig } from "next";
-import withPWAInit from "@ducanh2912/next-pwa";
+// @ts-check
+const withPWAInit = require("@ducanh2912/next-pwa").default;
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -12,6 +12,7 @@ const withPWA = withPWAInit({
   },
 });
 
-const nextConfig: NextConfig = {};
+/** @type {import('next').NextConfig} */
+const nextConfig = {};
 
-export default withPWA(nextConfig);
+module.exports = withPWA(nextConfig);
