@@ -98,7 +98,7 @@ export const chapter1Stages: Record<string, StageConfig> = {
     story: "オークの魔法でカミナリが交互に落ちるぞ！「まつ」を使って効率よく進もう！",
     goal: "待機と移動、繰り返しの組み合わせ",
     timeLimit: 40, 
-    enemyType: "orc", enemyHP: 15, enemyX: 0, enemyY: 100,
+    enemyType: "orc", enemyHP: 150, enemyX: 0, enemyY: 100,
     attackPoints: [
       { id: 1, x: -50, y: 0, radius: 20 },
       { id: 2, x: 50, y: 0, radius: 20 }
