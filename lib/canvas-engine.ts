@@ -719,7 +719,7 @@ export class CanvasEngine {
       ["player",       "/sprites/player_front.png" + v],
       ["player_front", "/sprites/player_front.png" + v],
       ["potion",       "/sprites/potion.png" + v],
-      ["villager",     "/sprites/villager.png" + v],
+      ["villager",     "/sprites/hushou.png" + v],
       ["player_cast",  "/sprites/player_cast.png" + v],
       ["player_hurt",  "/sprites/player_hurt.png" + v],
       ["orc_hurt",     "/sprites/orc_hurt.png" + v],
@@ -1003,7 +1003,7 @@ export class CanvasEngine {
       const px = this.toCanvasX(coin.x), py = this.toCanvasY(coin.y);
       const customImg = coin.sprite ? this.sprites.get(coin.sprite) : null;
       const drawImg = customImg || coinImg;
-      const displaySize = coin.sprite === "villager" ? Math.round(W * 0.10) : coinSize;
+      const displaySize = (coin.sprite === "villager" || coin.sprite === "hushou") ? Math.round(W * 0.10) : coinSize;
 
       if (drawImg && drawImg.complete && drawImg.naturalWidth > 0) {
         ctx.drawImage(drawImg, px - displaySize/2, py - displaySize/2, displaySize, displaySize);

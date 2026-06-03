@@ -80,7 +80,7 @@ export const chapter2Stages: Record<string, StageConfig> = {
     attackPoints: [],
     coins: [
       { x: -120, y: 100, sprite: "potion", label: "ポーション" },
-      { x: 130, y: -80, sprite: "hushou", label: "村民" },
+      { x: 130, y: -80, sprite: "villager", label: "村民" },
     ],
     enemySpeed: 0,
     blocklyBlocks: ["point_to_coin", "move_steps"],
