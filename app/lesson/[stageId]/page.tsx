@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { getStage } from "@/lib/stages";
 import { CanvasEngine, GameState, audioManager } from "@/lib/canvas-engine";
@@ -69,6 +69,13 @@ function StoryWithRuby({ stageId, story }: { stageId: string; story: string }) {
 export default function StagePage({ params }: PageProps) {
   const router = useRouter();
   const stageConfig = getStage(params.stageId);
+
+  const pointToTargets = useMemo(() =>
+    (stageConfig?.coins ?? [])
+      .filter((c: any) => c.label)
+      .map((c: any) => [c.label, c.label] as [string, string]),
+    [stageConfig]
+  );
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<CanvasEngine | null>(null);
@@ -652,11 +659,7 @@ export default function StagePage({ params }: PageProps) {
                 allowWait={stageConfig.allowWait}
                 defaultWaitSec={stageConfig.defaultWaitSec}
                 initialCode={stageConfig.initialCode}
-                pointToTargets={
-                  stageConfig.coins
-                    .filter((c: any) => c.label)
-                    .map((c: any) => [c.label, c.label] as [string, string])
-                }
+                pointToTargets={pointToTargets}
               />
             </div>
           </div>
