@@ -420,7 +420,7 @@ export default function StagePage({ params }: PageProps) {
         c.hidden = stageConfig.coins[i]?.hidden ?? false;
       });
       e.state.potions?.forEach(p => p.collected = false);
-      e.state.attackPoints = []; // 魔法陣や予告円をリセット
+      e.state.attackPoints = stageConfig.attackPoints.map(a => ({ ...a, hit: false })); // 魔法陣や予告円をリセット
       e.state.timeLeft = 0;
       e.state.damageEffects = [];
       e.state.fireballEffects = [];
