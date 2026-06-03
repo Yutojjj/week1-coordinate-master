@@ -256,6 +256,10 @@ export default function StagePage({ params }: PageProps) {
         const idx = parseInt(target.replace("coin", "")) || 0;
         const coin = engine.state.coins.filter(c => !c.collected)[idx];
         if (coin) { tx = coin.x; ty = coin.y; }
+      } else {
+        // label名で検索（ポーション、村民 など）
+        const coin = engine.state.coins.find((c: any) => c.label === target);
+        if (coin) { tx = coin.x; ty = coin.y; }
       }
       const dx = tx - engine.state.playerX;
       const dy = ty - engine.state.playerY;
@@ -648,6 +652,11 @@ export default function StagePage({ params }: PageProps) {
                 allowWait={stageConfig.allowWait}
                 defaultWaitSec={stageConfig.defaultWaitSec}
                 initialCode={stageConfig.initialCode}
+                pointToTargets={
+                  stageConfig.coins
+                    .filter((c: any) => c.label)
+                    .map((c: any) => [c.label, c.label] as [string, string])
+                }
               />
             </div>
           </div>
