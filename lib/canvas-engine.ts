@@ -1765,7 +1765,7 @@ export class CanvasEngine {
               isHit = angleDiff <= 5;
             }
 
-            if (i === 0 || i % 2 === 1) {
+            if (i % 4 === 0) {
               audioManager.playFireball();
               if (!this.state.fireballEffects) this.state.fireballEffects = [];
               this.state.fireballEffects.push({

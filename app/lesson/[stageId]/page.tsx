@@ -413,6 +413,7 @@ export default function StagePage({ params }: PageProps) {
       e.state.enemyTargetX = undefined;
       e.state.enemyTargetY = undefined;
       e.state.enemyHP = stageConfig.enemyHP;
+      e.state.enemyType = stageConfig.enemyType; // ★ コウモリ撃破でnoneになるのを元に戻す
       e.state.gameOver = false; 
       e.state.gameWon = false;
       e.state.coins.forEach((c, i) => {
