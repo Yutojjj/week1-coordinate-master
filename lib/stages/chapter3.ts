@@ -78,7 +78,7 @@ export const chapter3Stages: Record<string, StageConfig> = {
     story: "ボス戦だ！ランダムに現れる魔法陣を踏むと自動でボスを攻撃できるぞ！\n左手（キー操作）で移動して通常攻撃を避け、右手（クリック）で全体カミナリをバリアで防げ！",
     goal: "キー操作とクリック操作を組み合わせた総合的なアクション処理",
     timeLimit: 0,
-    enemyType: "orc", enemyHP: 4, enemyX: 0, enemyY: 150, 
+    enemyType: "orc", enemyHP: 150, enemyX: 0, enemyY: 150, 
     attackPoints: [], // Canvas側で動的に魔法陣と予告円を生成
     coins: [],
     enemySpeed: 0,
