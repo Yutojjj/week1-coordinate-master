@@ -73,7 +73,7 @@ export const chapter1Stages: Record<string, StageConfig> = {
   "1-2-1": {
     chapter: 1, stage: 2, area: 1,
     title: "まほうじんでチャージ！",
-    story: "コインのまえにコウモリがいるぞ！赤丸（まほうじん）のうえで「まつ」ブロックをつかって3びょうかんエネルギーをチャージし、コウモリをたおそう！",
+    story: "コインのまえにコウモリがいるぞ！赤丸（まほうじん）のうえで「まつ」ブロックをつかって5びょうかんエネルギーをチャージし、コウモリをたおそう！",
     goal: "特定の場所に移動し、指定時間待機（wait）することでギミックを作動させる",
     timeLimit: 0,
     enemyType: "bat", enemyHP: 30, 
